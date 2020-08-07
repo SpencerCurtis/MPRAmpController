@@ -42,8 +42,8 @@
         "repositoryURL": "https://github.com/vapor/fluent-kit.git",
         "state": {
           "branch": null,
-          "revision": "8a20f1dd111fa715d60e79fcfc38d8229c88392e",
-          "version": "1.6.0"
+          "revision": "2227231901db2c4d73c0a92cc088447f2a41030d",
+          "version": "1.7.1"
         }
       },
       {
@@ -132,8 +132,8 @@
         "repositoryURL": "https://github.com/apple/swift-nio.git",
         "state": {
           "branch": null,
-          "revision": "3cfb3f1d6efb05d1e93be342ea3d3e99aed00bb5",
-          "version": "2.20.0"
+          "revision": "acf5465b5e7fb9aeda54a34d16fb44c31a399715",
+          "version": "2.20.2"
         }
       },
       {
@@ -150,8 +150,8 @@
         "repositoryURL": "https://github.com/apple/swift-nio-http2.git",
         "state": {
           "branch": null,
-          "revision": "c76a9a5085bfc22882f8cff88189662af30806e8",
-          "version": "1.12.3"
+          "revision": "e9627350bdb85bde7e0dc69a29799e40961ced72",
+          "version": "1.13.0"
         }
       },
       {
@@ -168,8 +168,8 @@
         "repositoryURL": "https://github.com/SpencerCurtis/SwiftSerial.git",
         "state": {
           "branch": null,
-          "revision": "6fa713a78a1bb0ea58003ce1b1322a039be34fb0",
-          "version": "0.1.4"
+          "revision": "9b062c3ae31e68071760a6c872422ed59fcfe9e3",
+          "version": "0.1.6"
         }
       },
       {
@@ -177,8 +177,8 @@
         "repositoryURL": "https://github.com/vapor/vapor.git",
         "state": {
           "branch": null,
-          "revision": "281b50935a7c3ac86916f69cb2851e55915ddf07",
-          "version": "4.27.1"
+          "revision": "c4861a4bf1a254280d402a66d4751d1a150e0ade",
+          "version": "4.27.2"
         }
       },
       {

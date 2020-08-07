@@ -1,6 +1,6 @@
 //
 //  File.swift
-//  
+//
 //
 //  Created by Spencer Curtis on 6/30/20.
 //
@@ -20,7 +20,7 @@ class SerialController: RouteCollection {
     init(app: Application) {
         self.application = app
         currentSettings = defaultSettings
-        closePortTimer = DispatchSource.makeTimerSource()
+        closePortTimer = DispatchSource.makeTimerSource(queue: closePortQueue)
         getZoneNames()
         setUpTimer()
         updatePort()
@@ -28,7 +28,7 @@ class SerialController: RouteCollection {
     
     var currentSettings: PortSettings!
     var port: SerialPort!
-    var portCloseTime = CFAbsoluteTimeGetCurrent()
+    var portCloseTime = Date().timeIntervalSince1970
     
     
     
@@ -46,7 +46,7 @@ class SerialController: RouteCollection {
     
     private var defaultSettings: PortSettings = {
         #if os(OSX)
-        let path = "/dev/cu.usbserial-1430"
+        let path = "/dev/cu.usbserial-1410"
         #elseif os(Linux)
         let path = "/dev/ttyUSB0"
         #endif
@@ -58,6 +58,7 @@ class SerialController: RouteCollection {
     }()
     
     var closePortTimer: DispatchSourceTimer
+    var closePortQueue = DispatchQueue(label: "com.SpencerCurtis.MPRAmpController.closePortQueue")
     
     // Initialization and Setup
     
@@ -65,11 +66,7 @@ class SerialController: RouteCollection {
         closePortTimer.setEventHandler {
             self.checkToClosePort()
         }
-        
         closePortTimer.schedule(deadline: .now() + 2, repeating: 2)
-        if #available(OSX 10.14.3,  *) {
-            closePortTimer.activate()
-        }
     }
     
     // MARK: - Routing
@@ -113,11 +110,11 @@ class SerialController: RouteCollection {
                     currentSettings.transmitRate = rate
                 }
                 
-                let output = writeString("<\(rate)\r")
-                print(output)
+                writeString("<\(rate)\r")
+                _ = try port.readLine()
             }
         }
-        updatePortCloseTime()
+        //        updatePortCloseTime()
         return status
     }
     
@@ -133,68 +130,79 @@ class SerialController: RouteCollection {
     }
     
     
-    func changeZoneAttributes(req: Request) throws -> EventLoopFuture<Zone> {
-
-        defer {
-            updatePortCloseTime()
-        }
+    func changeZoneAttributes(req: Request) throws -> EventLoopFuture<[String: String]> {
+        
+        //        closePortTimer.resume()
         
         guard !isWriting else {
-            throw Abort(.internalServerError)
+            usleep(sleepTime * 5)
+            throw Abort(.conflict)
         }
         
         isWriting = true
         
         guard let zoneID = req.parameters.get("zoneid"),
             let attribute = req.parameters.get("attribute"),
-            let value = req.parameters.get("value") else { throw Abort(.preconditionFailed) }
+            let value = req.parameters.get("value") else {
+                isWriting = false
+                throw Abort(.preconditionFailed)
+        }
         
         
         guard ZoneAttributeIdentifier(rawValue: attribute.lowercased()) != nil else {
             usleep(sleepTime)
             isWriting = false
-            return try getSingleZone(req: req)
+            //            closePortTimer.cancel()
+            throw Abort(.notFound)
         }
         
         if attribute == ZoneAttributeIdentifier.name.rawValue {
-            return try setNameForZone(req, zoneID: zoneID, name: value).flatMap({
-                do {
-                    return try self.getSingleZone(req: req)
-                } catch {
-                    fatalError()
-                }
+            return try setNameForZone(req, zoneID: zoneID, name: value).flatMap({ (success) in
+                self.isWriting = false
+                return req.eventLoop.future(["name": value])
             })
         }
         
         try openPort()
         writeString("<\(zoneID)\(attribute)\(value)\r")
-        usleep(sleepTime)
+        let statusString  = try port.readLine()
         
-        return try getSingleZone(req: req)
+        usleep(sleepTime * 5)
+        
+        isWriting = false
+        
+        let statusDictionary = try attributeStatusToDictionary(statusString)
+        return req.eventLoop.future(statusDictionary)
     }
     
     // MARK: - GET
     
     func getSingleZone(req: Request) throws -> EventLoopFuture<Zone> {
-        //        _ = checkForAndLoadZoneNames(req)
-        defer {
-            isWriting = false
-            updatePortCloseTime()
-        }
         
-        isWriting = true
+        usleep(sleepTime * 10)
+        try openPort()
         guard let zoneIDString = req.parameters.get("zoneid"),
             let zoneID = Int(zoneIDString) else {
                 isWriting = false
                 throw Abort(.preconditionFailed)
         }
-        try openPort()
+        
+        isWriting = true
+        usleep(sleepTime)
         writeString("?\(zoneID)\r")
-        
-        
         var zoneParsedSuccessfully = false
         
         var count = 0
+        
+        let source = DispatchSource.makeTimerSource()
+        
+        source.setEventHandler {
+            zoneParsedSuccessfully = true
+        }
+        
+        source.schedule(deadline: .now() + 2, repeating: .never)
+        source.activate()
+        
         
         while !zoneParsedSuccessfully {
             let status = try port.readLine()
@@ -206,7 +214,7 @@ class SerialController: RouteCollection {
         }
         
         guard let index = indexOfZone(for: zoneID) else { throw Abort(.notFound) }
-        
+        closePort()
         return req.eventLoop.future(zones[index])
     }
     
@@ -214,15 +222,27 @@ class SerialController: RouteCollection {
         // TODO: Keep track of how many amps are connected.
         
         defer {
-            updatePortCloseTime()
             isWriting = false
         }
         try openPort()
         writeString("?10\r")
         do {
             var zoneString = ""
-            
             var currentZone = 11
+            
+            let source = DispatchSource.makeTimerSource()
+            source.setEventHandler {
+                NSLog("Returning 404 for getting all zones due to timeout")
+                currentZone = 404
+            }
+            source.schedule(deadline: .now() + 2, repeating: .never)
+            source.activate()
+            
+            defer {
+                source.cancel()
+                closePort()
+            }
+            
             var loopCount = 0
             while currentZone < 17 {
                 let newLine = try port.readLine()
@@ -233,9 +253,14 @@ class SerialController: RouteCollection {
                     currentZone += 1
                 }
                 loopCount += 1
-                NSLog(loopCount.description)
+                guard currentZone != 404 else {
+                    break
+                }
             }
-            
+            isWriting = false
+            guard currentZone != 404 else {
+                throw Abort(.notFound)
+            }
             return parseAllZoneStatus(from: zoneString)
         } catch {
             NSLog("Error getting all zones: \(error)")
@@ -268,7 +293,7 @@ class SerialController: RouteCollection {
     }
     
     func checkToClosePort() {
-        let now = CFAbsoluteTimeGetCurrent()
+        let now = Date().timeIntervalSince1970
         
         if now > portCloseTime {
             if portIsOpen {
@@ -279,7 +304,7 @@ class SerialController: RouteCollection {
     }
     
     private func updatePortCloseTime() {
-        portCloseTime = CFAbsoluteTimeGetCurrent() + 2
+        portCloseTime = Date().timeIntervalSince1970 + 2
     }
     
     private func openPort() throws {
@@ -316,10 +341,10 @@ class SerialController: RouteCollection {
         }
     }
     
-    private func setNameForZone(_ req: Request, zoneID: String, name: String) throws -> EventLoopFuture<Void> {
+    private func setNameForZone(_ req: Request, zoneID: String, name: String) throws -> EventLoopFuture<Bool> {
         
         guard let zoneID = Int(zoneID) else {
-            return req.eventLoop.makeSucceededFuture(Void())
+            return req.eventLoop.makeSucceededFuture(false)
         }
         
         return ZoneName
@@ -340,17 +365,19 @@ class SerialController: RouteCollection {
                 
                 return zoneNameToSave.save(on: req.db)
                     .flatMap({
+                        var success = false
                         if let index = self.indexOfZone(for: zoneNameToSave.zoneID) {
                             self.zones[index].name = name
+                            success = true
                         }
-                        return req.eventLoop.makeSucceededFuture(Void())
+                        return req.eventLoop.makeSucceededFuture(success)
                     })
         }
     }
     
     // MARK: - String Parsing From Serial Connection
     
-    @discardableResult func parseZoneStatus(from string: String, for zoneID: Int? = nil) -> Bool {
+    @discardableResult private func parseZoneStatus(from string: String, for zoneID: Int? = nil) -> Bool {
         var zoneString = string
         
         zoneString = zoneString
@@ -406,7 +433,7 @@ class SerialController: RouteCollection {
         return true
     }
     
-    func parseAllZoneStatus(from string: String) -> [Zone] {
+    private func parseAllZoneStatus(from string: String) -> [Zone] {
         
         var zoneStrings = string.components(separatedBy: "#>")
         zoneStrings.removeFirst()
@@ -416,6 +443,38 @@ class SerialController: RouteCollection {
         }
         
         return zones
+    }
+
+    private func attributeStatusToDictionary(_ attributeString: String) throws -> [String: String] {
+        let status = try parseAttributeStatus(attributeString)
+        
+        return [status.identifier.rawValue: status.value]
+    }
+    
+    private func parseAttributeStatus(_ attributeString: String) throws -> (identifier: ZoneAttributeIdentifier, value: String) {
+        var cleanString = attributeString.components(separatedBy: "<").last ?? ""
+        cleanString.removeFirst(2)
+        var attributeString: String = ""
+        var valueString: String = ""
+        
+        for (index, character) in cleanString.enumerated() {
+            switch index {
+            case 0, 1:
+                attributeString += "\(character)"
+            case 2, 3:
+                valueString += "\(character)"
+            default:
+                break
+            }
+        }
+        
+        guard let attribute = ZoneAttributeIdentifier(rawValue: attributeString),
+            Int(valueString) != nil else {
+                NSLog("Unable to parse attribute status")
+                throw Abort(.internalServerError)
+        }
+        
+        return (attribute, valueString)
     }
     
     @discardableResult private func writeString(_ string: String) -> String {

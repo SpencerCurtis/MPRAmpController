@@ -11,7 +11,7 @@ public func configure(_ app: Application) throws {
 
     // Configure migrations
     app.http.server.configuration.hostname = "0.0.0.0"
-    app.http.server.configuration.port = 8000
+    app.http.server.configuration.port = 8001
     
     app.databases.use(.sqlite(.file("zones.sqlite")), as: .sqlite)
     app.migrations.add(CreateZone())
