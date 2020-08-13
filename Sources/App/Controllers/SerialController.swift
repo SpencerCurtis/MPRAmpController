@@ -15,28 +15,10 @@ class SerialController: NSObject, RouteCollection {
     private var isWriting = false
     private var portIsOpen = false
     private var hasLoadedZoneNames = false
-    var application: Application!
-    
-    init(app: Application) {
-        self.application = app
-        currentSettings = defaultSettings
-        closePortTimer = DispatchSource.makeTimerSource(queue: closePortQueue)
-        port = ORSSerialPortManager.shared().availablePorts.first!
-        port.baudRate = 9600
-        //        getZoneNames()
-        //        setUpTimer()
-        //        updatePort()
-    }
     
     var currentSettings: PortSettings!
     var port: ORSSerialPort
     var portCloseTime = Date().timeIntervalSince1970
-    
-    enum SerialRequestType: Int {
-        case attributeChange
-        case getSingleZone
-        case getAllZones
-    }
     
     var zones: [Zone] = [Zone(id: 11),
                          Zone(id: 12),
@@ -50,32 +32,22 @@ class SerialController: NSObject, RouteCollection {
                                          38400, 57600,
                                          115200, 230400]
     
-    private var defaultSettings: PortSettings = {
-        #if os(OSX)
-        let path = "/dev/cu.usbserial-1410"
-        #elseif os(Linux)
-        let path = "/dev/ttyUSB0"
-        #endif
-        
-        return PortSettings(path: path,
-                            //                            receiveRate: .baud9600,
-            //                            transmitRate: .baud9600,
-            minimumBytesToRead: 0)
-    }()
-    
     var closePortTimer: DispatchSourceTimer
     var closePortQueue = DispatchQueue(label: "com.SpencerCurtis.MPRAmpController.closePortQueue")
     
-    // Initialization and Setup
+    var application: Application!
     
-    func setUpTimer() {
-        closePortTimer.setEventHandler {
-            //            self.checkToClosePort()
-        }
-        closePortTimer.schedule(deadline: .now() + 2, repeating: 2)
+    // MARK: - Initialization
+    
+    init(app: Application) {
+        self.application = app
+        closePortTimer = DispatchSource.makeTimerSource(queue: closePortQueue)
+        port = ORSSerialPortManager.shared().availablePorts.first!
+        port.baudRate = 9600
     }
     
     // MARK: - Routing
+    
     func boot(routes: RoutesBuilder) throws {
         if port.delegate == nil {
             port.delegate = self
@@ -86,7 +58,7 @@ class SerialController: NSObject, RouteCollection {
         
         routes.post("zones", ":zoneid", ":attribute", ":value", use: changeZoneAttributes)
         routes.post("settings", use: changeSettings)
-        routes.post("reset", use: resetPort)
+        //        routes.post("reset", use: resetPort)
     }
     
     // MARK: - POST
@@ -112,76 +84,88 @@ class SerialController: NSObject, RouteCollection {
                         status = .badRequest
                         break
                 }
-                
-                //                if identifier == .receiveRate {
-                //                    currentSettings.receiveRate = rate
-                //                } else {
-                //                    currentSettings.transmitRate = rate
-                //                }
-                
-                //                writeString("<\(rate)\r")
-                _ = ""
             }
         }
-        //        updatePortCloseTime()
         return status
     }
     
-    func resetPort(req: Request) throws -> HTTPResponseStatus {
-        currentSettings = defaultSettings
-        updatePort()
-        
-        if updatePort() {
-            return .ok
-        } else {
-            return .internalServerError
-        }
-    }
-    
-    
-    func changeZoneAttributes(req: Request) throws -> EventLoopFuture<[String: String]> {
-        
-        //        closePortTimer.resume()
-        
-        guard !isWriting else {
-            usleep(sleepTime * 5)
-            throw Abort(.conflict)
-        }
-        
-        isWriting = true
+    func changeZoneAttributes(req: Request) throws -> EventLoopFuture<Zone> {
         
         guard let zoneID = req.parameters.get("zoneid"),
-            let attribute = req.parameters.get("attribute"),
-            let value = req.parameters.get("value") else {
+            let attributeString = req.parameters.get("attribute"),
+            let value = req.parameters.get("value"),
+            let attribute = ZoneAttributeIdentifier(rawValue: attributeString.lowercased()) else {
                 isWriting = false
                 throw Abort(.preconditionFailed)
         }
         
         
-        guard ZoneAttributeIdentifier(rawValue: attribute.lowercased()) != nil else {
-            usleep(sleepTime)
-            isWriting = false
-            //            closePortTimer.cancel()
-            throw Abort(.notFound)
-        }
-        
-        if attribute == ZoneAttributeIdentifier.name.rawValue {
+        if attribute == .name {
             return try setNameForZone(req, zoneID: zoneID, name: value).flatMap({ (success) in
                 self.isWriting = false
-                return req.eventLoop.future(["name": value])
+                return try! self.getSingleZone(req: req)
             })
         }
         
-        try openPort()
-        writeString("<\(zoneID)\(attribute)\(value)\r")
-        let statusString  = ""
+        let requestData = "<\(zoneID)\(attributeString)\(value)\r".data(using: .ascii)!
+        let regex = try NSRegularExpression(pattern: "<.{6}")
+        let descriptor = ORSSerialPacketDescriptor(regularExpression: regex, maximumPacketLength: 8, userInfo: nil)
+        let promise = req.eventLoop.makePromise(of: Zone.self)
         
-        usleep(sleepTime * 5)
+        let userInfo: [String: Any] = ["requestType": SerialRequestType.attributeChange,
+                                       "promise": promise]
         
-        isWriting = false
+        let request = ORSSerialRequest(dataToSend: requestData,
+                                       userInfo: userInfo,
+                                       timeoutInterval: 5,
+                                       responseDescriptor: descriptor)
         
-        let statusDictionary = try attributeStatusToDictionary(statusString)
-        return req.eventLoop.future(statusDictionary)
+        port.send(request)
+        
+        return promise.futureResult
+    }
+    
+    func responseForAttributeChange(_ data: Data, request: ORSSerialRequest) {
+        guard let userInfo = request.userInfo as? [String: Any],
+            let promise = userInfo["promise"] as? EventLoopPromise<Zone>,
+            let dataAsString = String(data: data, encoding: .ascii) else {
+                return
+        }
+        
+        guard let attributeUpdate = parseAttributeStatus(dataAsString),
+            let index = indexOfZone(for: attributeUpdate.zoneID) else {
+            promise.fail(FailureError.noResults)
+            return
+        }
+        
+        var zone = zones[index]
+        
+        switch attributeUpdate.attribute {
+        case .pa:
+            zone.pa = attributeUpdate.value
+        case .power:
+            zone.power = attributeUpdate.zoneID
+        case .mute:
+            zone.mute = attributeUpdate.zoneID
+        case .doNotDisturb:
+            zone.doNotDisturb = attributeUpdate.zoneID
+        case .volume:
+            zone.volume = attributeUpdate.zoneID
+        case .treble:
+            zone.treble = attributeUpdate.zoneID
+        case .bass:
+            zone.bass = attributeUpdate.zoneID
+        case .balance:
+            zone.balance = attributeUpdate.zoneID
+        case .source:
+            zone.source = attributeUpdate.zoneID
+        case .name:
+            break
+        }
+        
+        zones[index].updateWith(zone)
+        
+        promise.succeed(zone)
     }
     
     // MARK: - GET
@@ -241,24 +225,25 @@ class SerialController: NSObject, RouteCollection {
     
     enum FailureError: Error {
         case noZone
+        case noResults
     }
     
     func getAllZones(_ req: Request) throws -> EventLoopFuture<[Zone]> {
         // TODO: Keep track of how many amps are connected.
         
-       
-//         TODO: Change the 6 in this regex to work with multiple controllers (12 for three or 18 for three controllers)
+        
+        //         TODO: Change the 6 in this regex to work with multiple controllers (12 for three or 18 for three controllers)
         
         let regex = try NSRegularExpression(pattern: "(#>.+\r\r\n{0,}){6}#", options: .useUnixLineSeparators)
         
         
         let requestData = "?10\r".data(using: .ascii)!
-//        let descriptor = ORSSerialPacketDescriptor(prefixString: "?10", suffixString: "\\r\\r", maximumPacketLength: 200, userInfo: nil)
+        //        let descriptor = ORSSerialPacketDescriptor(prefixString: "?10", suffixString: "\\r\\r", maximumPacketLength: 200, userInfo: nil)
         
         let descriptor = ORSSerialPacketDescriptor(regularExpression: regex,
-//                                                   matchingOptions: .anchored,
-                                                   maximumPacketLength: 200,
-                                                   userInfo: nil)
+                                                   //                                                   matchingOptions: .anchored,
+            maximumPacketLength: 200,
+            userInfo: nil)
         
         let promise = req.eventLoop.makePromise(of: [Zone].self)
         
@@ -337,7 +322,7 @@ class SerialController: NSObject, RouteCollection {
     }
     
     private func closePort() {
-        guard port != nil else { return }
+        //        guard port != nil else { return }
         //        port.closePort()
         portIsOpen = false
     }
@@ -467,26 +452,23 @@ class SerialController: NSObject, RouteCollection {
         return zones
     }
     
-    private func attributeStatusToDictionary(_ attributeString: String) throws -> [String: String] {
-        let status = try parseAttributeStatus(attributeString)
-        
-        return [status.identifier.rawValue: status.value]
-    }
     
-    private func parseAttributeStatus(_ attributeString: String) throws -> (identifier: ZoneAttributeIdentifier, value: String) {
-        var cleanString = attributeString.components(separatedBy: "<").last ?? ""
+    private func parseAttributeStatus(_ attributeString: String) -> ZoneAttributeUpdate? {
+        let cleanString = attributeString.components(separatedBy: "<").last ?? ""
         
-        guard cleanString.count >= 6 else { throw Abort(.internalServerError) }
+        guard cleanString.count >= 6 else { return nil }
         
-        cleanString.removeFirst(2)
-        var attributeString: String = ""
-        var valueString: String = ""
+        var zoneString = ""
+        var attributeString = ""
+        var valueString = ""
         
         for (index, character) in cleanString.enumerated() {
             switch index {
             case 0, 1:
-                attributeString += "\(character)"
+                zoneString += "\(character)"
             case 2, 3:
+                attributeString += "\(character)"
+            case 4, 5:
                 valueString += "\(character)"
             default:
                 break
@@ -494,24 +476,15 @@ class SerialController: NSObject, RouteCollection {
         }
         
         guard let attribute = ZoneAttributeIdentifier(rawValue: attributeString),
-            Int(valueString) != nil else {
+            let zoneID = Int(zoneString),
+            let value = Int(valueString) else {
                 NSLog("Unable to parse attribute status")
-                throw Abort(.internalServerError)
+                return nil
         }
         
-        return (attribute, valueString)
+        return ZoneAttributeUpdate(zoneID: zoneID, attribute: attribute, value: value)
     }
     
-    @discardableResult private func writeString(_ string: String) -> String {
-        do {
-            //            let result = try port.writeData(string.data(using: .ascii)!)
-            return ""
-        } catch {
-            let error = "ERROR: \(error)"
-            NSLog(error)
-            return error
-        }
-    }
     var buffer = ""
 }
 
@@ -554,9 +527,12 @@ extension SerialController: ORSSerialPortDelegate {
             responseForGettingSingleZone(responseData, request: request)
         case .getAllZones:
             responseForGettingAllZones(responseData, request: request)
+        case .attributeChange:
+            responseForAttributeChange(responseData, request: request)
         default:
             NSLog("Unimplemented")
         }
+        buffer = ""
         
         //        let dataString = String(data: responseData, encoding: .utf8)!
         //
