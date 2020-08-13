@@ -6,12 +6,12 @@
 //
 
 import Foundation
-import SwiftSerial
+//import SwiftSerial
 
 struct PortSettings {
     var path: String
-    var receiveRate: BaudRate
-    var transmitRate: BaudRate
+//    var receiveRate: BaudRate
+//    var transmitRate: BaudRate
     var minimumBytesToRead: Int
 }
 

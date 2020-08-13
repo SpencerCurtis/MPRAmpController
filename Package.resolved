@@ -6,8 +6,8 @@
         "repositoryURL": "https://github.com/swift-server/async-http-client.git",
         "state": {
           "branch": null,
-          "revision": "037b70291941fe43de668066eb6fb802c5e181d2",
-          "version": "1.1.1"
+          "revision": "c9a9bf061d713c91ee9974fa8a6afe413acfd0e9",
+          "version": "1.2.0"
         }
       },
       {
@@ -53,6 +53,15 @@
           "branch": null,
           "revision": "b828ac3891f6c872a2cc4b76586d68327af2941e",
           "version": "4.0.0"
+        }
+      },
+      {
+        "package": "ORSSerialPort",
+        "repositoryURL": "https://github.com/armadsen/ORSSerialPort.git",
+        "state": {
+          "branch": null,
+          "revision": "58a8cc454304e22280f184c2d2e25ecb3d5a74c5",
+          "version": "2.1.0"
         }
       },
       {
@@ -164,12 +173,12 @@
         }
       },
       {
-        "package": "SwiftSerial",
-        "repositoryURL": "https://github.com/SpencerCurtis/SwiftSerial.git",
+        "package": "swift-nio-transport-services",
+        "repositoryURL": "https://github.com/apple/swift-nio-transport-services.git",
         "state": {
           "branch": null,
-          "revision": "9b062c3ae31e68071760a6c872422ed59fcfe9e3",
-          "version": "0.1.6"
+          "revision": "d40a5e34e5b35f4f961cb34aeb2e0a02f42a945f",
+          "version": "1.8.0"
         }
       },
       {

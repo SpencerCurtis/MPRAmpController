@@ -13,14 +13,14 @@ let package = Package(
     dependencies: [
         // 💧 A server-side Swift web framework.
         .package(url: "https://github.com/vapor/vapor.git", from: "4.20.1"),
-        .package(url: "https://github.com/SpencerCurtis/SwiftSerial.git", from: "0.1.4"),
+        .package(url: "https://github.com/armadsen/ORSSerialPort.git", from: "2.1.0"),
         .package(url: "https://github.com/vapor/fluent.git", from: "4.0.0"),
         .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", from: "4.0.0"),
     ],
     targets: [
         .target(name: "App", dependencies: [
             .product(name: "Vapor", package: "vapor"),
-            .product(name: "SwiftSerial", package: "SwiftSerial"),
+            .product(name: "ORSSerial", package: "ORSSerialPort"),
             .product(name: "Fluent", package: "fluent"),
             .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
         ]),
