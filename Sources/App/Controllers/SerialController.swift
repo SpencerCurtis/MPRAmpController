@@ -42,7 +42,7 @@ class SerialController: NSObject, RouteCollection {
     init(app: Application) {
         self.application = app
         closePortTimer = DispatchSource.makeTimerSource(queue: closePortQueue)
-        port = ORSSerialPortManager.shared().availablePorts.first!
+        port = ORSSerialPortManager.shared().availablePorts.first(where: { $0.name.contains("usbserial") })!
         port.baudRate = 9600
     }
     
