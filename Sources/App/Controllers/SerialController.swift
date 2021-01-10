@@ -197,6 +197,7 @@ class SerialController: NSObject, RouteCollection {
         
         
         port.send(request)
+        getZoneNames()
         return promise.futureResult
     }
     
@@ -257,6 +258,7 @@ class SerialController: NSObject, RouteCollection {
         
         
         port.send(request)
+        getZoneNames()
         return promise.futureResult
     }
     
@@ -264,14 +266,10 @@ class SerialController: NSObject, RouteCollection {
         guard let userInfo = request.userInfo as? [String: Any],
             let promise = userInfo["promise"] as? EventLoopPromise<[Zone]>,
             let dataAsString = String(data: data, encoding: .ascii) else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            NSLog("Finishing string: \(dataAsString)")
-        }
         
         let zones = parseAllZoneStatus(from: dataAsString)
-        
+        getZoneNames()
         promise.succeed(zones)
-        
     }
     
     // MARK: - Private
