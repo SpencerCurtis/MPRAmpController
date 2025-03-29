@@ -16,7 +16,7 @@ let package = Package(
         .package(url: "https://github.com/armadsen/ORSSerialPort.git", from: "2.1.0"),
         .package(url: "https://github.com/vapor/fluent.git", from: "4.0.0"),
         .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", from: "4.0.0"),
-        .package(url: "https://github.com/mochidev/Bytes.git", .upToNextMinor(from: "0.2.3")),
+        .package(url: "https://github.com/vapor/leaf", from: "4.4.1")
     ],
     targets: [
         .target(name: "App", dependencies: [
@@ -24,7 +24,7 @@ let package = Package(
             .product(name: "ORSSerial", package: "ORSSerialPort"),
             .product(name: "Fluent", package: "fluent"),
             .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
-            .product(name: "Bytes", package: "Bytes"),
+            .product(name: "Leaf", package: "leaf")
         ],
                 swiftSettings: [
                     // Enable better optimizations when building in Release configuration. Despite the use of

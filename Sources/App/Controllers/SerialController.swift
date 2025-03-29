@@ -8,6 +8,15 @@
 import Vapor
 import ORSSerial
 import Dispatch
+import Leaf // ADD: Import Leaf
+
+// Add this struct to hold our zone view data
+private struct ZoneViewData: Codable {
+    let id: Int
+    let name: String
+    let status: String
+    let volume: Int
+}
 
 class SerialController: NSObject, RouteCollection {
     
@@ -49,6 +58,26 @@ class SerialController: NSObject, RouteCollection {
     // MARK: - Routing
     
     func boot(routes: RoutesBuilder) throws {
+        routes.get { [weak self] req -> EventLoopFuture<View> in
+            guard let self = self else {
+                throw Abort(.internalServerError)
+            }
+            
+            return try self.getAllZones(req).flatMap { zones in
+                let zoneData = zones.map { zone in
+                    ZoneViewData(
+                        id: zone.id,
+                        name: zone.name,
+                        status: zone.power == 1 ? "on" : "off",
+                        volume: zone.volume == -1 ? 0 : zone.volume
+                    )
+                }
+                
+                let context: [String: [ZoneViewData]] = ["zones": zoneData]
+                return req.view.render("zones", context)
+            }
+        }
+
         if port.delegate == nil {
             port.delegate = self
             port.open()
@@ -451,28 +480,28 @@ class SerialController: NSObject, RouteCollection {
             
             switch index {
             case 0:
-                zone.id = string
+            zone.id = string
             case 1 :
-                zone.pa = string
-            case 2:
-                zone.power = string
-            case 3:
-                zone.mute = string
-            case 4:
-                zone.doNotDisturb = string
-            case 5:
-                zone.volume = string
-            case 6:
-                zone.treble = string
-            case 7:
-                zone.bass = string
-            case 8:
-                zone.balance = string
-            case 9:
-                zone.source = string
-            default:
-                break
-            }
+        zone.pa = string
+        case 2:
+        zone.power = string
+        case 3:
+        zone.mute = string
+        case 4:
+        zone.doNotDisturb = string
+        case 5:
+        zone.volume = string
+        case 6:
+        zone.treble = string
+        case 7:
+        zone.bass = string
+        case 8:
+        zone.balance = string
+        case 9:
+        zone.source = string
+        default:
+        break
+        }
         }
         
         guard let index = indexOfZone(for: zone.id) else { return false }
@@ -505,14 +534,14 @@ class SerialController: NSObject, RouteCollection {
         for (index, character) in cleanString.enumerated() {
             switch index {
             case 0, 1:
-                zoneString += "\(character)"
-            case 2, 3:
-                attributeString += "\(character)"
-            case 4, 5:
-                valueString += "\(character)"
-            default:
-                break
-            }
+        zoneString += "\(character)"
+        case 2, 3:
+        attributeString += "\(character)"
+        case 4, 5:
+        valueString += "\(character)"
+        default:
+        break
+        }
         }
         
         guard let attribute = ZoneAttributeIdentifier(rawValue: attributeString),
