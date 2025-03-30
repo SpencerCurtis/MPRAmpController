@@ -5,6 +5,15 @@ import Leaf
 
 // Called before your application initializes.
 public func configure(_ app: Application) throws {
+    // Configure CORS
+    let corsConfiguration = CORSMiddleware.Configuration(
+        allowedOrigin: .all,
+        allowedMethods: [.GET, .POST, .OPTIONS],
+        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
+    )
+    let cors = CORSMiddleware(configuration: corsConfiguration)
+    app.middleware.use(cors)
+    
     // Configure Leaf
     app.views.use(.leaf)
     
