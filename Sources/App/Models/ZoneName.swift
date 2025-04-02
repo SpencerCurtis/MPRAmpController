@@ -8,8 +8,9 @@
 import Foundation
 import Fluent
 import FluentSQLiteDriver
+import Vapor
 
-final class ZoneName: Model {
+final class ZoneName: Model, Content {
     
     static let schema: String = "zoneNames"
     
@@ -22,4 +23,11 @@ final class ZoneName: Model {
     @Field(key: "zoneID")
     var zoneID: Int
     
+    init() {}
+    
+    init(id: UUID? = nil, name: String, zoneID: Int) {
+        self.id = id
+        self.name = name
+        self.zoneID = zoneID
+    }
 }

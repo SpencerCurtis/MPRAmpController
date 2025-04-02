@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "app",
+    name: "MPRAmpController",
     platforms: [
-       .macOS(.v10_15),
+        .macOS(.v10_15)
     ],
     products: [
         .executable(name: "Run", targets: ["Run"]),
@@ -12,21 +12,22 @@ let package = Package(
     ],
     dependencies: [
         // 💧 A server-side Swift web framework.
-        .package(url: "https://github.com/vapor/vapor.git", from: "4.36.2"),
-        .package(url: "https://github.com/armadsen/ORSSerialPort.git", from: "2.1.0"),
-        .package(url: "https://github.com/vapor/fluent.git", from: "4.1.0"),
-        .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", from: "4.0.1"),
+        .package(url: "https://github.com/vapor/vapor.git", .exact("4.77.1")),
+        .package(url: "https://github.com/armadsen/ORSSerialPort.git", .exact("2.1.0")),
+        .package(url: "https://github.com/vapor/fluent.git", .exact("4.8.0")),
+        .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", .exact("4.5.0"))
     ],
     targets: [
-        .target(name: "App", dependencies: [
-            .product(name: "Vapor", package: "vapor"),
-            .product(name: "ORSSerial", package: "ORSSerialPort"),
-            .product(name: "Fluent", package: "fluent"),
-            .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
-        ]),
-        .target(name: "Run", dependencies: [
-            .target(name: "App"),
-        ]),
+        .target(
+            name: "App",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                .product(name: "ORSSerial", package: "ORSSerialPort"),
+                .product(name: "Fluent", package: "fluent"),
+                .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver")
+            ]
+        ),
+        .target(name: "Run", dependencies: [.target(name: "App")]),
         .testTarget(name: "AppTests", dependencies: [
             .target(name: "App"),
             .product(name: "XCTVapor", package: "vapor"),
