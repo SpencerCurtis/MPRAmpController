@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zone Controller</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --card-bg: #ffffff;
+            --card-border: #dddddd;
+            --button-bg: #007AFF;
+            --button-hover: #0056b3;
+            --slider-bg: #007AFF;
+            --slider-track: #404040;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --text-color: #ffffff;
+            --card-bg: #2d2d2d;
+            --card-border: #404040;
+            --button-bg: #0A84FF;
+            --button-hover: #409CFF;
+            --slider-bg: #0A84FF;
+            --slider-track: #666666;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+            margin: 0;
+            padding: 16px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+            -webkit-text-size-adjust: 100%;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .header-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-top: 50px; /* Space for connection status */
+        }
+        
+        .header-controls h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        
+        .zone-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .zone-card {
+            border: 1px solid var(--card-border);
+            padding: 16px;
+            margin-bottom: 16px;
+            border-radius: 16px;
+            background-color: var(--card-bg);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        [data-theme="dark"] .zone-card {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .zone-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            min-height: 48px; /* Better touch target */
+            padding: 8px 0;
+        }
+        
+        .zone-header h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 500;
+            flex-grow: 1;
+        }
+        
+        .zone-controls {
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 20px;
+            padding-bottom: 16px;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        
+        .zone-card.expanded .zone-controls {
+            display: flex;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 0 12px;
+            margin-bottom: 8px;
+        }
+        
+        .control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .control-group label {
+            font-weight: 500;
+            font-size: 16px;
+            color: var(--text-color);
+        }
+        
+        .control-value {
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--button-bg);
+            min-width: 32px;
+            text-align: right;
+        }
+        
+        .power-button {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            padding: 0;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-left: 16px;
+            flex-shrink: 0;
+        }
+        
+        .power-button.on {
+            background-color: #34C759;
+            box-shadow: 0 2px 8px rgba(52, 199, 89, 0.3);
+        }
+        
+        .power-button.off {
+            background-color: #FF3B30;
+            box-shadow: 0 2px 8px rgba(255, 59, 48, 0.3);
+        }
+        
+        .power-button:active {
+            transform: scale(0.95);
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            -webkit-appearance: none;
+            background: var(--slider-track);
+            border-radius: 4px;
+            outline: none;
+            cursor: pointer;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: var(--slider-bg);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+            transition: all 0.2s;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb:active {
+            transform: scale(1.2);
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: var(--slider-bg);
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+        }
+        
+        .theme-toggle {
+            padding: 12px 20px;
+            border-radius: 24px;
+            border: none;
+            background-color: var(--button-bg);
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+        }
+        
+        .theme-toggle:active {
+            transform: scale(0.95);
+        }
+        
+        /* Settings Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal-content {
+            background-color: var(--card-bg);
+            margin: 10% auto;
+            padding: 24px;
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 400px;
+            position: relative;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+        
+        .close-button {
+            position: absolute;
+            right: 20px;
+            top: 10px;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            color: var(--text-color);
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .settings-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .form-group label {
+            font-weight: 500;
+            font-size: 16px;
+        }
+        
+        .form-group input {
+            padding: 12px;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-size: 16px;
+        }
+        
+        .settings-button {
+            padding: 12px 20px;
+            border-radius: 24px;
+            border: none;
+            background-color: var(--button-bg);
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+        }
+        
+        .settings-button:active {
+            transform: scale(0.95);
+        }
+        
+        .save-button {
+            padding: 12px 24px;
+            border-radius: 24px;
+            border: none;
+            background-color: var(--button-bg);
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.3s;
+            align-self: flex-end;
+        }
+        
+        .save-button:active {
+            transform: scale(0.95);
+        }
+        
+        .error-message {
+            color: #FF3B30;
+            display: none;
+        }
+        
+        .connection-status {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 500;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        
+        .connection-status.connected {
+            background-color: rgba(52, 199, 89, 0.9);
+            color: white;
+        }
+        
+        .connection-status.disconnected {
+            background-color: rgba(255, 59, 48, 0.9);
+            color: white;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-color);
+        }
+        
+        .empty-state h2 {
+            margin-bottom: 16px;
+            font-size: 20px;
+        }
+        
+        .empty-state p {
+            margin-bottom: 24px;
+            font-size: 16px;
+            opacity: 0.7;
+        }
+        
+        .zone-name-edit {
+            background: var(--bg-color);
+            border: 2px solid var(--button-bg);
+            color: var(--text-color);
+            font-size: 20px;
+            font-weight: 500;
+            margin: 0;
+            padding: 4px 12px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 200px;
+        }
+        
+        .zone-name-edit:focus {
+            outline: none;
+            border-color: var(--button-hover);
+        }
+        
+        /* Mobile-specific improvements */
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+            
+            .header-controls {
+                flex-direction: column;
+                gap: 16px;
+                text-align: center;
+                padding-top: 60px;
+            }
+            
+            .header-controls h1 {
+                font-size: 24px;
+            }
+            
+            .zone-card {
+                padding: 20px;
+                margin-bottom: 12px;
+                border-radius: 20px;
+            }
+            
+            .zone-header {
+                min-height: 52px;
+                padding: 12px 0;
+            }
+            
+            .zone-header h2 {
+                font-size: 18px;
+            }
+            
+            .power-button {
+                width: 52px;
+                height: 52px;
+                font-size: 26px;
+            }
+            
+                         .control-group {
+                 gap: 16px;
+                 padding: 0 16px;
+                 margin-bottom: 12px;
+             }
+            
+            .control-header {
+                margin-bottom: 4px;
+            }
+            
+            .control-group label {
+                font-size: 15px;
+            }
+            
+            .control-value {
+                font-size: 15px;
+            }
+            
+            input[type="range"] {
+                height: 10px;
+            }
+            
+                         input[type="range"]::-webkit-slider-thumb {
+                 width: 24px;
+                 height: 24px;
+             }
+             
+             input[type="range"]::-moz-range-thumb {
+                 width: 24px;
+                 height: 24px;
+             }
+            
+            .theme-toggle, .settings-button {
+                padding: 14px 24px;
+                font-size: 15px;
+            }
+            
+            .connection-status {
+                top: 12px;
+                font-size: 13px;
+                padding: 6px 12px;
+            }
+        }
+        
+        /* Very small screens */
+        @media (max-width: 480px) {
+            .zone-container {
+                max-width: 100%;
+            }
+            
+            .header-controls h1 {
+                font-size: 22px;
+            }
+            
+            .zone-card {
+                padding: 16px;
+                border-radius: 16px;
+            }
+            
+                         .control-group {
+                 gap: 20px;
+                 padding: 0 20px;
+                 margin-bottom: 16px;
+             }
+            
+                         input[type="range"]::-webkit-slider-thumb {
+                 width: 28px;
+                 height: 28px;
+             }
+             
+             input[type="range"]::-moz-range-thumb {
+                 width: 28px;
+                 height: 28px;
+             }
+        }
+        
+        /* Prevent text selection on touch devices */
+        .zone-header, .power-button, .theme-toggle, .settings-button {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        /* Better focus states for accessibility */
+        .power-button:focus,
+        .theme-toggle:focus,
+        .settings-button:focus,
+        input[type="range"]:focus {
+            outline: 2px solid var(--button-bg);
+            outline-offset: 2px;
+        }
+    </style>
+    <script>
+        // Theme handling
+        const theme = localStorage.getItem('theme') || 
+            (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        }
+
+        // Zone expansion handling
+        function toggleZone(zoneId) {
+            const card = document.getElementById(`zone-${zoneId}`);
+            card.classList.toggle('expanded');
+            
+            // Save expanded state
+            const expandedZones = JSON.parse(localStorage.getItem('expandedZones') || '[]');
+            const index = expandedZones.indexOf(zoneId);
+            
+            if (card.classList.contains('expanded')) {
+                if (index === -1) expandedZones.push(zoneId);
+            } else {
+                if (index !== -1) expandedZones.splice(index, 1);
+            }
+            
+            localStorage.setItem('expandedZones', JSON.stringify(expandedZones));
+        }
+
+        // Wait for DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            // Connection status handling
+            let isConnected = false;
+            let hasBeenConnected = false; // Track if we've ever been connected
+            let zonesContainer = document.querySelector('.zone-container');
+            let isAdjustingSlider = false;
+            let isEditingZoneName = false;
+            let refreshInterval;
+            
+            async function fetchZones() {
+                // Don't fetch if we're adjusting a slider or editing a zone name
+                if (isAdjustingSlider) {
+                    console.log('Skipping fetch while slider is being adjusted');
+                    return;
+                }
+                
+                if (isEditingZoneName) {
+                    console.log('Skipping fetch while zone name is being edited');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/zones`, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const zones = await response.json();
+                        
+                        // Check if we just reconnected (was disconnected, now connected)
+                        if (!isConnected && hasBeenConnected) {
+                            console.log('Connection restored - refreshing page in 1 second');
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1000);
+                            return true;
+                        }
+                        
+                        isConnected = true;
+                        hasBeenConnected = true; // Mark that we've been connected at least once
+                        updateConnectionStatus();
+                        updateZonesDisplay(zones);
+                        return true;
+                    } else {
+                        console.error('=== ERROR RESPONSE ===');
+                        console.error('Status:', response.status);
+                        console.error('Status Text:', response.statusText);
+                        const errorText = await response.text();
+                        console.error('Error Body:', errorText);
+                    }
+                } catch (error) {
+                    console.error('=== FETCH ERROR ===');
+                    console.error('Error Name:', error.name);
+                    console.error('Error Message:', error.message);
+                    console.error('Stack:', error.stack);
+                    isConnected = false;
+                    updateConnectionStatus();
+                    return false;
+                }
+                return false;
+            }
+            
+            function updateZonesDisplay(zones) {
+                if (!zones || zones.length === 0) {
+                    zonesContainer.innerHTML = `
+                        <div class="header-controls">
+                            <h1>Zone Controller</h1>
+                            <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+                        </div>
+                        <div class="empty-state">
+                            <h2>No Zones Available</h2>
+                            <p>No zones were found on the amp controller.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                            
+                // Get expanded zones from localStorage
+                const expandedZones = JSON.parse(localStorage.getItem('expandedZones') || '[]');
+                
+                const zonesHtml = zones.map(zone => {
+                    // Extract zone ID from the new format - it's directly in the zone property
+                    const zoneId = zone.zone;
+                    if (!zoneId) {
+                        console.error('Invalid zone:', zone);
+                        return '';
+                    }
+                    
+                    // Debug power state
+                    console.log(`Zone ${zoneId} power state:`, {
+                        rawPa: zone.pa,
+                        rawPower: zone.pr,
+                        powerType: typeof zone.pr,
+                        powerIsOff: zone.pr === "00",
+                        volume: zone.vo,
+                        correctButtonClass: zone.pr === "00" ? "off" : "on",
+                        oldWrongButtonClass: zone.pa === "00" ? "off" : "on"
+                    });
+                    
+                    // Check if this zone should be expanded
+                    const isExpanded = expandedZones.includes(zoneId);
+                    
+                    return `
+                        <div id="zone-${zoneId}" class="zone-card${isExpanded ? ' expanded' : ''}">
+                            <div class="zone-header" onclick="toggleZone('${zoneId}')">
+                                <h2 ondblclick="event.stopPropagation(); editZoneName('${zoneId}', '${zone.name || zoneId}')">${zone.name && zone.name !== zoneId ? zone.name : `Zone ${zoneId}`}</h2>
+                                <button class="power-button ${zone.pr === "00" ? "off" : "on"}" 
+                                        onclick="event.stopPropagation(); updateZoneAttribute('${zoneId}', 'pr', '${zone.pr === "00" ? "01" : "00"}')">
+                                    ⏻
+                                </button>
+                            </div>
+                            <div class="zone-controls">
+                                <div class="control-group">
+                                    <div class="control-header">
+                                        <label>Volume</label>
+                                        <span class="control-value">${zone.vo || 0}</span>
+                                    </div>
+                                    <input type="range" min="0" max="38" value="${zone.vo || 0}" 
+                                           oninput="handleSliderInput(this)"
+                                           onchange="handleSliderChange(this, '${zoneId}', 'vo')"
+                                           onmousedown="startSliderAdjustment()"
+                                           onmouseup="endSliderAdjustment()"
+                                           ontouchstart="startSliderAdjustment()"
+                                           ontouchend="endSliderAdjustment()">
+                                </div>
+                                <div class="control-group">
+                                    <div class="control-header">
+                                        <label>Balance</label>
+                                        <span class="control-value">${zone.bl || 10}</span>
+                                    </div>
+                                    <input type="range" min="0" max="20" value="${zone.bl || 10}" 
+                                           oninput="handleSliderInput(this)"
+                                           onchange="handleSliderChange(this, '${zoneId}', 'bl')"
+                                           onmousedown="startSliderAdjustment()"
+                                           onmouseup="endSliderAdjustment()"
+                                           ontouchstart="startSliderAdjustment()"
+                                           ontouchend="endSliderAdjustment()">
+                                </div>
+                                <div class="control-group">
+                                    <div class="control-header">
+                                        <label>Treble</label>
+                                        <span class="control-value">${zone.tr || 7}</span>
+                                    </div>
+                                    <input type="range" min="0" max="14" value="${zone.tr || 7}" 
+                                           oninput="handleSliderInput(this)"
+                                           onchange="handleSliderChange(this, '${zoneId}', 'tr')"
+                                           onmousedown="startSliderAdjustment()"
+                                           onmouseup="endSliderAdjustment()"
+                                           ontouchstart="startSliderAdjustment()"
+                                           ontouchend="endSliderAdjustment()">
+                                </div>
+                                <div class="control-group">
+                                    <div class="control-header">
+                                        <label>Bass</label>
+                                        <span class="control-value">${zone.bs || 7}</span>
+                                    </div>
+                                    <input type="range" min="0" max="14" value="${zone.bs || 7}" 
+                                           oninput="handleSliderInput(this)"
+                                           onchange="handleSliderChange(this, '${zoneId}', 'bs')"
+                                           onmousedown="startSliderAdjustment()"
+                                           onmouseup="endSliderAdjustment()"
+                                           ontouchstart="startSliderAdjustment()"
+                                           ontouchend="endSliderAdjustment()">
+                                </div>
+                                <div class="control-group">
+                                    <div class="control-header">
+                                        <label>Source</label>
+                                        <span class="control-value">${zone.ch || 1}</span>
+                                    </div>
+                                    <input type="range" min="1" max="6" value="${zone.ch || 1}" 
+                                           oninput="handleSliderInput(this)"
+                                           onchange="handleSliderChange(this, '${zoneId}', 'ch')"
+                                           onmousedown="startSliderAdjustment()"
+                                           onmouseup="endSliderAdjustment()"
+                                           ontouchstart="startSliderAdjustment()"
+                                           ontouchend="endSliderAdjustment()">
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                zonesContainer.innerHTML = `
+                    <div class="header-controls">
+                        <h1>Zone Controller</h1>
+                        <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+                    </div>
+                    ${zonesHtml}
+                `;
+            }
+            
+            function updateConnectionStatus() {
+                const status = document.getElementById('connectionStatus');
+                if (isConnected) {
+                    status.textContent = 'Connected';
+                    status.className = 'connection-status connected';
+                } else {
+                    status.textContent = 'Disconnected';
+                    status.className = 'connection-status disconnected';
+                }
+            }
+
+            window.startSliderAdjustment = function() {
+                isAdjustingSlider = true;
+                console.log('Started slider adjustment');
+            };
+            
+            window.endSliderAdjustment = function() {
+                isAdjustingSlider = false;
+                console.log('Ended slider adjustment');
+                // Fetch zones once after slider adjustment ends
+                fetchZones();
+            };
+            
+            window.handleSliderInput = function(slider) {
+                const valueSpan = slider.parentElement.querySelector('.control-value');
+                if (valueSpan) {
+                    valueSpan.textContent = slider.value;
+                }
+            };
+            
+            window.handleSliderChange = function(slider, zoneId, attribute) {
+                updateZoneAttribute(zoneId, attribute, slider.value);
+            };
+            
+            window.updateZoneAttribute = async function(zoneId, attribute, value) {
+                if (!zoneId) {
+                    console.error('Invalid zone ID:', zoneId);
+                    return;
+                }
+                
+                console.log('=== UPDATE ZONE START ===');
+                console.log('Zone:', zoneId);
+                console.log('Attribute:', attribute);
+                console.log('Value:', value);
+                
+                if (attribute === 'pr') {
+                    console.log('Power update:', {
+                        currentValue: document.querySelector(`#zone-${zoneId} .power-button`).classList.contains('on') ? "01" : "00",
+                        newValue: value,
+                        buttonElement: document.querySelector(`#zone-${zoneId} .power-button`)
+                    });
+                }
+                
+                try {
+                    const response = await fetch(`/zones/${zoneId}/${attribute}/${value}`, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('Response not OK:', response.status, errorText);
+                        throw new Error(`Failed to update zone: ${response.status}`);
+                    }
+                    
+                    // For power updates, just trigger a full refresh
+                    if (attribute === 'pr') {
+                        await fetchZones();
+                        return;
+                    }
+                    
+                    const zone = await response.json();
+                    console.log('=== ZONE UPDATED ===');
+                    console.log('Updated Zone:', zone);
+                    
+                    // Update the specific control's value with the server response
+                    const zoneCard = document.getElementById(`zone-${zoneId}`);
+                    if (zoneCard) {
+                        const control = zoneCard.querySelector(`input[type="range"][onchange*="${attribute}"]`);
+                        const valueSpan = zoneCard.querySelector(`input[type="range"][onchange*="${attribute}"]`)?.parentElement?.querySelector('.control-value');
+                        if (control && valueSpan) {
+                            const serverValue = zone[attribute] || value;
+                            control.value = serverValue;
+                            valueSpan.textContent = serverValue;
+                        }
+                    }
+                } catch (error) {
+                    console.error('=== UPDATE ZONE ERROR ===');
+                    console.error('Error Name:', error.name);
+                    console.error('Error Message:', error.message);
+                    console.error('Stack:', error.stack);
+                    alert('Failed to update zone. Please check your connection.');
+                }
+            };
+            
+            window.editZoneName = function(zoneId, currentName) {
+                const zoneCard = document.getElementById(`zone-${zoneId}`);
+                const titleElement = zoneCard.querySelector('h2');
+                
+                if (titleElement.querySelector('input')) {
+                    return; // Already editing
+                }
+                
+                // Start editing - prevent auto-refresh
+                isEditingZoneName = true;
+                console.log('Started zone name editing');
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = currentName === zoneId ? '' : currentName;
+                input.className = 'zone-name-edit';
+                input.placeholder = `Zone ${zoneId}`;
+                
+                const originalText = titleElement.textContent;
+                titleElement.textContent = '';
+                titleElement.appendChild(input);
+                
+                input.focus();
+                input.select();
+                
+                const finishEdit = async () => {
+                    const newName = input.value.trim();
+                    if (newName && newName !== currentName) {
+                        try {
+                            const response = await fetch(`/zones/${zoneId}/name/${encodeURIComponent(newName)}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Accept': 'application/json'
+                                }
+                            });
+                            
+                            if (response.ok) {
+                                titleElement.textContent = newName;
+                            } else {
+                                console.error('Failed to update zone name');
+                                titleElement.textContent = originalText;
+                            }
+                        } catch (error) {
+                            console.error('Error updating zone name:', error);
+                            titleElement.textContent = originalText;
+                        }
+                    } else {
+                        titleElement.textContent = originalText;
+                    }
+                    
+                    // End editing - re-enable auto-refresh
+                    isEditingZoneName = false;
+                    console.log('Ended zone name editing');
+                    // Trigger a refresh now that editing is complete
+                    await fetchZones();
+                };
+                
+                input.addEventListener('blur', finishEdit);
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        input.blur();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        titleElement.textContent = originalText;
+                        // End editing - re-enable auto-refresh
+                        isEditingZoneName = false;
+                        console.log('Cancelled zone name editing');
+                    }
+                });
+            };
+            
+            // Initial connection check and zones fetch
+            fetchZones();
+            
+            // Check connection and fetch zones every 5 seconds
+            setInterval(fetchZones, 5000);
+        });
+    </script>
+</head>
+<body>
+    <div id="connectionStatus" class="connection-status disconnected">Checking connection...</div>
+    
+    <div class="zone-container">
+        <div class="header-controls">
+            <h1>Zone Controller</h1>
+            <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+        </div>
+        
+        #if(hasError):
+            <div class="empty-state">
+                <h2>No Connection to Amp Controller</h2>
+                <p>Please check your connection settings and make sure the amp controller is running.</p>
+            </div>
+        #else:
+            #if(zones.isEmpty):
+                <div class="empty-state">
+                    <h2>No Zones Available</h2>
+                    <p>No zones were found on the amp controller.</p>
+                </div>
+            #else:
+                #for(zone in zones):
+                    <div id="zone-#(zone.zone)" class="zone-card">
+                        <div class="zone-header" onclick="toggleZone('#(zone.zone)')">
+                            <h2 ondblclick="event.stopPropagation(); editZoneName('#(zone.zone)', '#(zone.name)')">#if(zone.name != zone.zone):#(zone.name)#else:Zone #(zone.zone)#endif</h2>
+                            <button class="power-button #if(zone.pr == "00"):off#else:on#endif"
+                                onclick="event.stopPropagation(); updateZoneAttribute('#(zone.zone)', 'pr', '#if(zone.pr == "00"):01#else:00#endif')">
+                                ⏻
+                            </button>
+                        </div>
+                        <div class="zone-controls">
+                            <div class="control-group">
+                                <div class="control-header">
+                                    <label>Volume</label>
+                                    <span class="control-value">#(zone.vo)</span>
+                                </div>
+                                <input type="range" min="0" max="38" value="#(zone.vo)" 
+                                       oninput="handleSliderInput(this)"
+                                       onchange="handleSliderChange(this, '#(zone.zone)', 'vo')"
+                                       onmousedown="startSliderAdjustment()"
+                                       onmouseup="endSliderAdjustment()"
+                                       ontouchstart="startSliderAdjustment()"
+                                       ontouchend="endSliderAdjustment()">
+                            </div>
+                            <div class="control-group">
+                                <div class="control-header">
+                                    <label>Balance</label>
+                                    <span class="control-value">#(zone.bl)</span>
+                                </div>
+                                <input type="range" min="0" max="20" value="#(zone.bl)" 
+                                       oninput="handleSliderInput(this)"
+                                       onchange="handleSliderChange(this, '#(zone.zone)', 'bl')"
+                                       onmousedown="startSliderAdjustment()"
+                                       onmouseup="endSliderAdjustment()"
+                                       ontouchstart="startSliderAdjustment()"
+                                       ontouchend="endSliderAdjustment()">
+                            </div>
+                            <div class="control-group">
+                                <div class="control-header">
+                                    <label>Treble</label>
+                                    <span class="control-value">#(zone.tr)</span>
+                                </div>
+                                <input type="range" min="0" max="14" value="#(zone.tr)" 
+                                       oninput="handleSliderInput(this)"
+                                       onchange="handleSliderChange(this, '#(zone.zone)', 'tr')"
+                                       onmousedown="startSliderAdjustment()"
+                                       onmouseup="endSliderAdjustment()"
+                                       ontouchstart="startSliderAdjustment()"
+                                       ontouchend="endSliderAdjustment()">
+                            </div>
+                            <div class="control-group">
+                                <div class="control-header">
+                                    <label>Bass</label>
+                                    <span class="control-value">#(zone.bs)</span>
+                                </div>
+                                <input type="range" min="0" max="14" value="#(zone.bs)" 
+                                       oninput="handleSliderInput(this)"
+                                       onchange="handleSliderChange(this, '#(zone.zone)', 'bs')"
+                                       onmousedown="startSliderAdjustment()"
+                                       onmouseup="endSliderAdjustment()"
+                                       ontouchstart="startSliderAdjustment()"
+                                       ontouchend="endSliderAdjustment()">
+                            </div>
+                            <div class="control-group">
+                                <div class="control-header">
+                                    <label>Source</label>
+                                    <span class="control-value">#(zone.ch)</span>
+                                </div>
+                                <input type="range" min="1" max="6" value="#(zone.ch)" 
+                                       oninput="handleSliderInput(this)"
+                                       onchange="handleSliderChange(this, '#(zone.zone)', 'ch')"
+                                       onmousedown="startSliderAdjustment()"
+                                       onmouseup="endSliderAdjustment()"
+                                       ontouchstart="startSliderAdjustment()"
+                                       ontouchend="endSliderAdjustment()">
+                            </div>
+                        </div>
+                    </div>
+                #endfor
+            #endif
+        #endif
+    </div>
+</body>
+</html> 

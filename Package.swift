@@ -15,7 +15,8 @@ let package = Package(
         .package(url: "https://github.com/vapor/vapor.git", .exact("4.77.1")),
         .package(url: "https://github.com/armadsen/ORSSerialPort.git", .exact("2.1.0")),
         .package(url: "https://github.com/vapor/fluent.git", .exact("4.8.0")),
-        .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", .exact("4.5.0"))
+        .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", .exact("4.5.0")),
+        .package(url: "https://github.com/vapor/leaf.git", .exact("4.2.4"))
     ],
     targets: [
         .target(
@@ -24,7 +25,8 @@ let package = Package(
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
                 .product(name: "Fluent", package: "fluent"),
-                .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver")
+                .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
+                .product(name: "Leaf", package: "leaf")
             ]
         ),
         .target(name: "Run", dependencies: [.target(name: "App")]),
