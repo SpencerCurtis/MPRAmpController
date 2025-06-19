@@ -1,47 +1,70 @@
 # MPRAmpController - Cursor IDE Rules
 
 ## Project Overview
-This is a Swift Vapor web application for controlling multi-zone amplifiers via serial communication. The target deployment is an **Intel Mac mini**, not the local development machine.
+This is a Swift Vapor web application for controlling multi-zone amplifiers via serial communication. The application supports both **local development with mock controllers** and **production deployment to Intel Mac mini**.
 
-## Build & Deployment Instructions
+## Development & Testing Instructions
 
-### ⚠️ DO NOT RUN LOCALLY
-- **DO NOT** use `swift run` or similar local execution commands
-- **DO NOT** try to run the app on the development machine
-- The app requires USB serial hardware that's only available on the target Intel Mac mini
-
-### ✅ ALWAYS USE BUILD SCRIPT
-When building or updating the application:
+### ✅ DEFAULT: LOCAL DEVELOPMENT WITH MOCK CONTROLLER
+For day-to-day development and testing:
 
 ```bash
-# Fast incremental build (recommended)
+# Run locally with mock controller (DEFAULT)
+./run-local.sh
+```
+
+Access the development server at `http://localhost:8001`
+
+### 🔄 DUAL CONTROLLER COMPATIBILITY REQUIREMENT
+**🚨 CRITICAL**: All code changes MUST work with BOTH controller types:
+- **MockZoneController**: Simulated hardware for local development
+- **SerialController**: Real hardware for production deployment
+
+**Testing Requirements:**
+1. **Always test locally first** with `./run-local.sh` (mock controller)
+2. **Verify production build** with `./build-x86.sh` before deployment
+3. **Ensure feature parity** between mock and real implementations
+4. **Handle graceful fallbacks** when hardware is unavailable
+
+### 📦 PRODUCTION DEPLOYMENT
+Only when ready to deploy to Intel Mac mini:
+
+```bash
+# Build for Intel x86_64 deployment
 ./build-x86.sh
 
 # Clean build when troubleshooting
 ./build-x86.sh --clean
 ```
 
-### 📦 Deployment Process
-1. Run `./build-x86.sh` to create `binary/Run`
-2. Transfer `binary/Run` to the Intel Mac mini
-3. On the Mac mini: `chmod +x Run && ./Run`
-4. Access web interface at `http://localhost:8080`
+**Deployment Process:**
+1. Test locally: `./run-local.sh`
+2. Build for production: `./build-x86.sh`
+3. Transfer `binary/Run` to Intel Mac mini
+4. On Mac mini: `chmod +x Run && ./Run`
+5. Access at `http://localhost:8080`
 
 ## Architecture Notes
 
-### Target Platform
+### Controller Architecture
+- **Protocol-Based Design**: `ZoneControllerProtocol` enables controller abstraction
+- **Environment Selection**: Automatic switching via `USE_MOCK_CONTROLLER` environment variable
+- **Development**: Uses `MockZoneController` (simulated hardware)
+- **Production**: Uses `SerialController` (real hardware via ORSSerial)
+
+### Target Platform (Production)
 - **Architecture**: Intel x86_64 (not ARM/Apple Silicon)
-- **Target**: Older Intel Mac mini with USB serial connection
+- **Target**: Intel Mac mini with USB serial connection
 - **Binary Location**: `binary/Run`
 
-### Hardware Requirements
+### Hardware Requirements (Production Only)
 - USB serial device with "usbserial" in the device name
 - Multi-zone amplifier controller connected via USB
 
 ### Software Stack
 - **Backend**: Swift Vapor 4
 - **Database**: SQLite (for zone names)
-- **Serial**: ORSSerial framework
+- **Serial**: ORSSerial framework (production) / Mock simulation (development)
 - **Frontend**: Leaf templates with modern JavaScript
 
 ## Automated Template Embedding
@@ -54,7 +77,8 @@ When building or updating the application:
 
 ### ✅ Template Development Rules
 - **DO**: Edit `.leaf` files directly in `Sources/App/Resources/Views/`
-- **DO**: Use `./build-x86.sh` to build with embedded templates
+- **DO**: Test locally first with `./run-local.sh`
+- **DO**: Build for production with `./build-x86.sh` when deploying
 - **DON'T**: Edit `EmbeddedTemplates.swift` manually (auto-generated)
 - **DON'T**: Try to manually sync templates with Swift code
 
@@ -64,37 +88,61 @@ When building or updating the application:
 
 ### 🔄 Template Workflow
 1. Edit `.leaf` files in `Sources/App/Resources/Views/`
-2. Run `./build-x86.sh` (templates automatically embedded)
-3. Deploy `binary/Run` to Intel Mac mini
+2. Test locally: `./run-local.sh`
+3. When ready to deploy: `./build-x86.sh` (templates automatically embedded)
+4. Deploy `binary/Run` to Intel Mac mini
 
 ## Code Patterns
 
-### Serial Port Handling
+### Controller Compatibility
+- **Always implement via protocol**: Use `ZoneControllerProtocol` for all zone operations
+- **Test both controllers**: Ensure functionality works with mock and real hardware
+- **Graceful degradation**: Handle missing hardware without crashes
+- **Environment awareness**: Respect `USE_MOCK_CONTROLLER` environment variable
+
+### Serial Port Handling (Production)
 - Port is optional (`ORSSerialPort?`) to prevent crashes when hardware isn't connected
 - Always use guard statements when accessing port
 - Graceful fallback when no serial device is available
 
+### Mock Controller (Development)
+- Simulates realistic zone behavior and responses
+- Persists state changes during development session
+- Configurable delays and error simulation
+- No external hardware dependencies
+
 ### Error Handling
-- Use `FailureError` enum for serial communication errors
+- Use `ZoneControllerError` enum for consistent error handling
 - Handle `noPort`, `noZone`, and `noResults` cases
 - Never force unwrap serial port operations
+- Ensure errors work identically in both mock and real controllers
 
 ### Zone Management
 - 6 zones (IDs: 11-16) hardcoded in controller
 - Custom zone names stored in SQLite database
 - Real-time updates via web interface
+- Consistent behavior between mock and real implementations
 
 ## Development Workflow
 
+### 🚀 Primary Workflow (Local Development)
+1. **Start local server**: `./run-local.sh` (uses mock controller)
+2. **Make code changes**: Edit Swift/Leaf files
+3. **Test immediately**: Refresh browser at `http://localhost:8001`
+4. **Verify compatibility**: Ensure changes work for both controller types
+5. **When ready**: Build production version with `./build-x86.sh`
+
 ### For Code Changes
-1. Make changes to Swift code
-2. Test compilation: `./build-x86.sh`
-3. Deploy `binary/Run` to Intel Mac mini for testing
+1. **Test locally first**: `./run-local.sh` (mock controller)
+2. **Verify logic**: Ensure mock controller simulates real behavior accurately
+3. **Build for production**: `./build-x86.sh` when ready to deploy
+4. **Deploy and test**: Transfer `binary/Run` to Intel Mac mini
 
 ### For Frontend/Template Changes
 1. Edit `.leaf` files in `Sources/App/Resources/Views/`
-2. Build: `./build-x86.sh` (templates are automatically embedded)
-3. Deploy `binary/Run` to Intel Mac mini for testing
+2. **Test locally**: `./run-local.sh` for immediate feedback
+3. **Build for deployment**: `./build-x86.sh` (templates automatically embedded)
+4. Deploy `binary/Run` to Intel Mac mini
 
 **⚠️ TEMPLATE RULES:**
 - **ALWAYS** edit `.leaf` files in `Sources/App/Resources/Views/`
@@ -102,20 +150,27 @@ When building or updating the application:
 - Templates are automatically embedded into the binary during build
 
 ### For API Changes
-1. Update `SerialController.swift` routes
-2. Update frontend JavaScript if needed
-3. Build and deploy: `./build-x86.sh`
+1. Update controller methods in both `SerialController.swift` and `MockZoneController.swift`
+2. **Ensure protocol compliance**: Both controllers must implement `ZoneControllerProtocol`
+3. **Test with mock first**: `./run-local.sh`
+4. Update frontend JavaScript if needed
+5. Build and deploy: `./build-x86.sh`
 
 ## Key Files
 
-### Build & Deployment
-- `build-x86.sh` - Build script for x86 deployment with template embedding
+### Build & Development Scripts
+- `run-local.sh` - **Primary development script** (mock controller)
+- `build-x86.sh` - Production build script for x86 deployment with template embedding
 - `generate-embedded-templates.sh` - Automated template embedding script
-- `binary/Run` - Standalone deployment executable with embedded templates
 
-### Source Code
-- `Sources/App/Controllers/SerialController.swift` - Main API controller
+### Controllers (BOTH MUST BE MAINTAINED)
+- `Sources/App/Controllers/ZoneControllerProtocol.swift` - Controller interface
+- `Sources/App/Controllers/SerialController.swift` - Real hardware controller
+- `Sources/App/Controllers/MockZoneController.swift` - Development mock controller
+
+### Application Configuration
 - `Sources/App/configure.swift` - App configuration with template fallback system
+- `Sources/App/routes.swift` - Route configuration with controller selection
 
 ### Templates (EDIT THESE)
 - `Sources/App/Resources/Views/zones.leaf` - Main zone controller interface
@@ -125,13 +180,14 @@ When building or updating the application:
 - `Sources/App/Models/EmbeddedTemplates.swift` - Auto-generated template embeddings
 
 ### Documentation
-- `README.md` - Project documentation with template workflow
+- `README.md` - Project documentation with complete workflow
 - `EMBEDDED_TEMPLATES.md` - Detailed template system documentation
-- `binary/README.md` - Deployment documentation
 
 ## Remember
 
-🎯 **Always target Intel Mac mini deployment, never local execution**
+🏠 **Default to local development with ./run-local.sh for daily work**
+🔄 **All changes must work with BOTH mock and real controllers**
 📝 **Always edit .leaf templates directly - they're automatically embedded during build**
 🚫 **Never edit EmbeddedTemplates.swift manually - it's auto-generated**
-🔄 **Use ./build-x86.sh for all builds - includes automated template embedding** 
+✅ **Test locally first, then build for production deployment**
+🎯 **Use ./build-x86.sh only when ready to deploy to Intel Mac mini** 
