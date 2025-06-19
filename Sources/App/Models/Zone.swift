@@ -7,6 +7,7 @@
 
 import Foundation
 import Vapor
+import Fluent
 
 enum ZoneAttributeIdentifier: String, CaseIterable {
     case pa
@@ -22,36 +23,74 @@ enum ZoneAttributeIdentifier: String, CaseIterable {
 //    case keypadStatus = "ls"
 }
 
-struct Zone: Equatable {
+final class Zone: Model, Equatable {
+    static func == (lhs: Zone, rhs: Zone) -> Bool {
+        return lhs.id == rhs.id
+    }
     
-    var id: Int
+    static let schema = "zones"
+    
+    @ID(custom: "id")
+    var id: Int?
+    
+    @Field(key: "pa")
     var pa: Int
+    
+    @Field(key: "power")
     var power: Int
+    
+    @Field(key: "mute")
     var mute: Int
+    
+    @Field(key: "doNotDisturb")
     var doNotDisturb: Int
+    
+    @Field(key: "volume")
     var volume: Int
+    
+    @Field(key: "treble")
     var treble: Int
+    
+    @Field(key: "bass")
     var bass: Int
+    
+    @Field(key: "balance")
     var balance: Int
+    
+    @Field(key: "source")
     var source: Int
-    //    var keypadStatus: ZoneAttribute
+    
+    @Field(key: "name")
     var name: String
+    
+    init() {
+        self.pa = -1
+        self.power = -1
+        self.mute = -1
+        self.doNotDisturb = -1
+        self.volume = -1
+        self.treble = -1
+        self.bass = -1
+        self.balance = -1
+        self.source = -1
+        self.name = "Unknown"
+    }
     
     init(id: Int = -1) {
         self.id = id
-        pa = -1
-        power = -1
-        mute = -1
-        doNotDisturb = -1
-        volume = -1
-        treble = -1
-        bass = -1
-        balance = -1
-        source = -1
-        name = id.description
+        self.pa = -1
+        self.power = -1
+        self.mute = -1
+        self.doNotDisturb = -1
+        self.volume = -1
+        self.treble = -1
+        self.bass = -1
+        self.balance = -1
+        self.source = -1
+        self.name = id.description
     }
     
-    mutating func updateWith(_ zone: Zone) {
+    func updateWith(_ zone: Zone) {
         id = zone.id
         pa = zone.pa
         power = zone.power
@@ -64,7 +103,6 @@ struct Zone: Equatable {
         source = zone.source
     }
 }
-
 
 extension Zone: Content {
      enum CodingKeys: String, CodingKey {
@@ -82,7 +120,8 @@ extension Zone: Content {
         case name
     }
     
-    init(from decoder: Decoder) throws {
+    convenience init(from decoder: Decoder) throws {
+        self.init()
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         self.id = Int(try container.decode(String.self, forKey: .id)) ?? 0
@@ -95,13 +134,13 @@ extension Zone: Content {
         self.bass = Int(try container.decode(String.self, forKey: .bass)) ?? 0
         self.balance = Int(try container.decode(String.self, forKey: .balance)) ?? 0
         self.source = Int(try container.decode(String.self, forKey: .source)) ?? 0
-        self.name = self.id.description
+        self.name = self.id?.description ?? "Unknown"
     }
     
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         
-        try container.encode(formattedString(for: id), forKey: .id)
+        try container.encode(formattedString(for: id ?? 0), forKey: .id)
         try container.encode(formattedString(for: pa), forKey: .pa)
         try container.encode(formattedString(for: power), forKey: .power)
         try container.encode(formattedString(for: mute), forKey: .mute)
@@ -115,6 +154,10 @@ extension Zone: Content {
     }
     
     private func formattedString(for value: Int) -> String {
+        // Handle uninitialized values (default to "00" for off state)
+        if value < 0 {
+            return "00"
+        }
         return value < 10 ? "0\(value)" : value.description
     }
 }

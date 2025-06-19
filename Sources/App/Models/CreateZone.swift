@@ -8,16 +8,23 @@
 import Fluent
 
 struct CreateZone: Migration {
-    func revert(on database: Database) -> EventLoopFuture<Void> {
-        database.schema(ZoneName.schema)
-                .delete()
-    }
-    
     func prepare(on database: Database) -> EventLoopFuture<Void> {
-        database.schema(ZoneName.schema)
-            .id()
-            .field("zoneID", .int, .required)
+        return database.schema("zones")
+            .field("id", .int, .identifier(auto: false))
+            .field("pa", .int, .required)
+            .field("power", .int, .required)
+            .field("mute", .int, .required)
+            .field("doNotDisturb", .int, .required)
+            .field("volume", .int, .required)
+            .field("treble", .int, .required)
+            .field("bass", .int, .required)
+            .field("balance", .int, .required)
+            .field("source", .int, .required)
             .field("name", .string, .required)
             .create()
+    }
+
+    func revert(on database: Database) -> EventLoopFuture<Void> {
+        return database.schema("zones").delete()
     }
 }
