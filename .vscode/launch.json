@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MPRAmpController}",
+            "name": "Debug Run",
+            "program": "${workspaceFolder:MPRAmpController}/.build/debug/Run",
+            "preLaunchTask": "swift: Build Debug Run"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:MPRAmpController}",
+            "name": "Release Run",
+            "program": "${workspaceFolder:MPRAmpController}/.build/release/Run",
+            "preLaunchTask": "swift: Build Release Run"
+        }
+    ]
+}
