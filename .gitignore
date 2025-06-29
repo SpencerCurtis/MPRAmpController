@@ -8,3 +8,4 @@ db.sqlite
 .swiftpm
 zones.sqlite
 binary/
+embedded_views/
