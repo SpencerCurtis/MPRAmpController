@@ -13,13 +13,10 @@ import ORSSerial
 final class SerialController: NSObject, RouteCollection {
 
     var port: ORSSerialPort?
-    var currentSettings: PortSettings
 
     /// All live zone state lives behind this actor (see ZoneStore) so the serial
     /// delegate thread and the async route handlers can't race on it.
     let store = ZoneStore(zoneIDs: [11, 12, 13, 14, 15, 16])
-
-    private let validBaudRates: [Int] = [9600, 19200, 38400, 57600, 115200, 230400]
 
     let application: Application
 
@@ -38,7 +35,6 @@ final class SerialController: NSObject, RouteCollection {
             .first(where: { $0.name.contains("usbserial") })
         availablePort?.baudRate = 9600
         self.port = availablePort
-        self.currentSettings = PortSettings(path: availablePort?.path ?? "", minimumBytesToRead: 0)
         super.init()
     }
 
@@ -52,7 +48,6 @@ final class SerialController: NSObject, RouteCollection {
         routes.get("zones", use: getAllZones)
         routes.get("zones", ":zoneid", use: getSingleZone)
         routes.post("zones", ":zoneid", ":attribute", ":value", use: changeZoneAttributes)
-        routes.post("settings", use: changeSettings)
     }
 
     // MARK: - GET
@@ -118,26 +113,6 @@ final class SerialController: NSObject, RouteCollection {
             requestType: .attributeChange,
             descriptor: descriptor
         )
-    }
-
-    func changeSettings(req: Request) throws -> HTTPResponseStatus {
-        guard let settingsDictionary = try? req.content.decode([String: String].self) else {
-            return .badRequest
-        }
-
-        for (key, value) in settingsDictionary {
-            guard let identifier = SettingIdentifier(rawValue: key) else { continue }
-
-            switch identifier {
-            case .path:
-                currentSettings.path = value
-            case .receiveRate, .transmitRate:
-                guard let rate = Int(value), validBaudRates.contains(rate) else {
-                    return .badRequest
-                }
-            }
-        }
-        return .ok
     }
 
     // MARK: - Serial Bridge

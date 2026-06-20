@@ -52,7 +52,6 @@ Routes (registered in `boot(routes:)`, all `async` except settings):
 - `GET /zones` — query all zones (sends `?10\r`)
 - `GET /zones/:zoneid` — query one zone (sends `?<id>\r`)
 - `POST /zones/:zoneid/:attribute/:value` — set an attribute, or set a name if `:attribute == name`
-- `POST /settings` — partial baud-rate/path settings (validates only)
 
 ### 2. The async serial bridge
 ORSSerialPort is delegate/callback-based; the routes are `async`. The bridge:
@@ -85,7 +84,6 @@ The Monoprice wire format:
 ## Open issues (not yet fixed)
 - **Single-amp assumptions** are hardcoded (the `{6}` in the all-zones regex, zone IDs `11`–`16`). Centralize before adding multi-amp support.
 - **`port` itself isn't actor-isolated** — it's read in `send` on a route thread and set to `nil` in `serialPortWasRemovedFromSystem` on the delegate thread. Benign (set-once, nil-rarely) but not strictly clean; the zone *state* race is fixed via `ZoneStore`.
-- **`POST /settings` validates but applies nothing** — baud-rate fields are commented out in `PortSettings`, so the endpoint only stores `path`. Decide whether to implement or remove it.
 
 ## Stale infrastructure (does not match how this runs)
 - `web.Dockerfile` / `docker-compose.yml` target Linux + Postgres. The app is macOS-only (ORSSerialPort) on SQLite — these won't produce a working build.
