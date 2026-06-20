@@ -26,7 +26,13 @@ final class SerialController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         routes.get("zones", use: getAllZones)
         routes.get("zones", ":zoneid", use: getSingleZone)
+        routes.post("zones", "all", ":attribute", ":value", use: changeAllZoneAttributes)
         routes.post("zones", ":zoneid", ":attribute", ":value", use: changeZoneAttributes)
+
+        routes.get("presets", use: listPresets)
+        routes.post("presets", use: capturePreset)
+        routes.post("presets", ":presetid", "apply", use: applyPresetRoute)
+        routes.delete("presets", ":presetid", use: deletePreset)
     }
 
     // MARK: - Core (hardware via the injected transport; no HTTP or DB — unit testable)
@@ -113,6 +119,76 @@ final class SerialController: RouteCollection {
             attribute: attribute.rawValue,
             value: String(format: "%02d", intValue)
         )
+    }
+
+    func changeAllZoneAttributes(req: Request) async throws -> [Zone] {
+        guard let attributeString = req.parameters.get("attribute"),
+            let value = req.parameters.get("value"),
+            let attribute = ZoneAttributeIdentifier(rawValue: attributeString.lowercased()),
+            attribute != .name else {
+                throw Abort(.preconditionFailed)
+        }
+        guard let intValue = Int(value), attribute.validRange?.contains(intValue) == true else {
+            throw Abort(.badRequest, reason: "\(value) is out of range for \(attribute.rawValue)")
+        }
+        return try await setAllZones(attribute: attribute.rawValue, value: String(format: "%02d", intValue))
+    }
+
+    // MARK: - Presets
+
+    func listPresets(req: Request) async throws -> [PresetDTO] {
+        try await Preset.query(on: req.db).all().map(PresetDTO.init)
+    }
+
+    func capturePreset(req: Request) async throws -> PresetDTO {
+        guard let name = try? req.query.get(String.self, at: "name"), !name.isEmpty else {
+            throw Abort(.badRequest, reason: "Missing 'name' query parameter")
+        }
+        let preset = Preset(name: name, zones: try await captureCurrentState())
+        try await preset.save(on: req.db)
+        return PresetDTO(preset)
+    }
+
+    func applyPresetRoute(req: Request) async throws -> [Zone] {
+        guard let id = req.parameters.get("presetid", as: UUID.self) else { throw Abort(.preconditionFailed) }
+        guard let preset = try await Preset.find(id, on: req.db) else { throw Abort(.notFound) }
+        return try await apply(preset)
+    }
+
+    func deletePreset(req: Request) async throws -> HTTPStatus {
+        guard let id = req.parameters.get("presetid", as: UUID.self) else { throw Abort(.preconditionFailed) }
+        guard let preset = try await Preset.find(id, on: req.db) else { throw Abort(.notFound) }
+        try await preset.delete(on: req.db)
+        return .noContent
+    }
+
+    // MARK: - Bulk / preset core (hardware via the transport; no HTTP or DB — unit testable)
+
+    /// Sets one attribute on every zone, returning the updated set.
+    @discardableResult
+    func setAllZones(attribute: String, value: String) async throws -> [Zone] {
+        for id in await store.allZones().map(\.id) {
+            try await setAttribute(zoneID: String(id), attribute: attribute, value: value)
+        }
+        return await store.allZones()
+    }
+
+    /// Reads every zone and snapshots its power/source/volume for a preset.
+    func captureCurrentState() async throws -> [PresetZone] {
+        let zones = try await refreshAllZones()
+        return zones.map { PresetZone(zone: $0.id, power: $0.power, source: $0.source, volume: $0.volume) }
+    }
+
+    /// Pushes a preset's power, source, and volume to each of its zones.
+    @discardableResult
+    func apply(_ preset: Preset) async throws -> [Zone] {
+        for presetZone in preset.zones {
+            let id = String(presetZone.zone)
+            try await setAttribute(zoneID: id, attribute: "pr", value: String(format: "%02d", presetZone.power))
+            try await setAttribute(zoneID: id, attribute: "ch", value: String(format: "%02d", presetZone.source))
+            try await setAttribute(zoneID: id, attribute: "vo", value: String(format: "%02d", presetZone.volume))
+        }
+        return await store.allZones()
     }
 
     // MARK: - Zone Names (persistence)

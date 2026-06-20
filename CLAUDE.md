@@ -52,6 +52,10 @@ Routes (registered in `boot(routes:)`, all `async`):
 - `GET /zones` — query all zones (sends `?10\r`)
 - `GET /zones/:zoneid` — query one zone (sends `?<id>\r`)
 - `POST /zones/:zoneid/:attribute/:value` — set an attribute, or set a name if `:attribute == name`
+- `POST /zones/all/:attribute/:value` — set one attribute on every zone (literal `all` wins over `:zoneid`)
+- `GET /presets` · `POST /presets?name=…` (snapshot current state) · `POST /presets/:presetid/apply` · `DELETE /presets/:presetid`
+
+**Routing gotcha:** RoutingKit forbids two routes sharing a prefix but using *different* parameter names at the same position (e.g. `presets/:name` + `presets/:presetid/apply` → boot-time `Precondition failed`). Keep one param name per position; capture takes its name from the query string instead. A *constant* vs a *param* (`zones/all` vs `zones/:zoneid`) is fine. This isn't caught by the controller tests since they don't exercise routing.
 
 ### 2. The serial transport
 `SerialTransport` (`Sources/App/SerialTransport.swift`) abstracts the link: `send(_ command: Data, matching: SerialResponseMatcher) async throws -> Data`. `ORSSerialTransport` is the production implementation — it owns the `ORSSerialPort`, turns the matcher into an `ORSSerialPacketDescriptor`, and bridges the delegate callback back to the caller with `withCheckedThrowingContinuation` (a `ContinuationBox` guards against a reply/timeout double-resume). Tests inject a `FakeSerialTransport` that returns canned bytes.
@@ -77,6 +81,7 @@ The Monoprice wire format:
 - `Zone` — core value type. `Codable` uses **amp protocol keys** as JSON keys (`zone`, `pr`, `mu`, `vo`, …) and zero-pads single digits. `-1` means "unknown / not yet read." `apply(_:)` writes a single attribute update's *value* to the right field.
 - `ZoneAttributeIdentifier` — friendly names to 2-char protocol codes; drives command building and response routing.
 - `ZoneName` (Fluent) / `CreateZone` (migration) — name persistence.
+- `Preset` (Fluent) / `CreatePreset` (migration) — a named scene; per-zone power/source/volume stored as JSON in the `zones` column, exposed to the API via `PresetDTO`/`PresetZone`.
 - `ZoneAttributeUpdate` — a parsed attribute change (zone, attribute, value).
 
 ## Open issues (not yet fixed)

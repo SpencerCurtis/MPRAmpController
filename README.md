@@ -28,6 +28,11 @@ Zones are addressed `11`–`16` (amplifier unit 1, zones 1–6).
 | `GET` | `/zones` | Status of all six zones |
 | `GET` | `/zones/:id` | Status of one zone |
 | `POST` | `/zones/:id/:attribute/:value` | Set an attribute on a zone |
+| `POST` | `/zones/all/:attribute/:value` | Set an attribute on every zone |
+| `GET` | `/presets` | List saved presets |
+| `POST` | `/presets?name=NAME` | Save the current zone state as a preset |
+| `POST` | `/presets/:id/apply` | Apply a preset (restores each zone's power, source, volume) |
+| `DELETE` | `/presets/:id` | Delete a preset |
 
 `:attribute` is one of the amplifier's codes:
 
