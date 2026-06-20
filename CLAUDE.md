@@ -67,6 +67,8 @@ Routes (registered in `boot(routes:)`, all `async`):
 
 The controller's core methods — `refreshAllZones`, `refreshZone`, `setAttribute` — build a command via `SerialProtocol`, `await transport.send`, parse the reply, and update the store. They take no `Request` and touch no DB, so they're unit-testable with the fake (see `SerialControllerTests`). The route handlers are thin wrappers that add parameter decoding and name persistence on top.
 
+`routes.swift` picks the transport from `USE_MOCK_CONTROLLER`: `MockSerialTransport` (a stateful, hardware-free transport — `run-local.sh` sets the env var) when `true`, otherwise `ORSSerialTransport`. So the whole server + UI can run with no amplifier attached. `FakeSerialTransport` (Tests) is the stateless echo used by unit tests; `MockSerialTransport` (App) keeps per-zone state so a live local UI is interactive.
+
 Adding a serial operation means: a `SerialProtocol` command builder + matcher, a controller core method that parses the reply, and a thin route wrapper.
 
 ### 3. `SerialProtocol` — the pure, testable core

@@ -15,9 +15,14 @@ Serial I/O uses [ORSSerialPort](https://github.com/armadsen/ORSSerialPort), whic
 ## Building and running
 
 ```bash
-swift run Run        # build and start the server
+swift run Run        # build and start the server (needs the serial adapter)
 swift test           # run the unit tests
+./run-local.sh       # run with no hardware (mock amplifier) for UI/API development
 ```
+
+`run-local.sh` sets `USE_MOCK_CONTROLLER=true`, which swaps in a mock serial transport that
+holds in-memory zone state — the full API and web UI work, with writes persisting, so you can
+develop without the amplifier connected.
 
 ## HTTP API
 
