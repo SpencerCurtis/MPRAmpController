@@ -104,7 +104,15 @@ final class SerialController: RouteCollection {
             return try await getSingleZone(req: req)
         }
 
-        return try await setAttribute(zoneID: zoneID, attribute: attribute.rawValue, value: value)
+        guard let intValue = Int(value), attribute.validRange?.contains(intValue) == true else {
+            throw Abort(.badRequest, reason: "\(value) is out of range for \(attribute.rawValue)")
+        }
+
+        return try await setAttribute(
+            zoneID: zoneID,
+            attribute: attribute.rawValue,
+            value: String(format: "%02d", intValue)
+        )
     }
 
     // MARK: - Zone Names (persistence)
