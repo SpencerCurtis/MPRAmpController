@@ -8,89 +8,88 @@
 import Foundation
 import Vapor
 import Fluent
-import ORSSerial
 
-final class SerialController: NSObject, RouteCollection {
+final class SerialController: RouteCollection {
 
-    var port: ORSSerialPort?
+    private let transport: SerialTransport
 
     /// All live zone state lives behind this actor (see ZoneStore) so the serial
-    /// delegate thread and the async route handlers can't race on it.
+    /// transport and the async route handlers can't race on it.
     let store = ZoneStore(zoneIDs: [11, 12, 13, 14, 15, 16])
 
-    let application: Application
-
-    enum FailureError: Error {
-        case noDevice
-        case noZone
-        case noResults
-        case timeout
-    }
-
-    // MARK: - Initialization
-
-    init(app: Application) {
-        self.application = app
-        let availablePort = ORSSerialPortManager.shared().availablePorts
-            .first(where: { $0.name.contains("usbserial") })
-        availablePort?.baudRate = 9600
-        self.port = availablePort
-        super.init()
+    init(transport: SerialTransport) {
+        self.transport = transport
     }
 
     // MARK: - Routing
 
     func boot(routes: RoutesBuilder) throws {
-        if let port = port, port.delegate == nil {
-            port.delegate = self
-            port.open()
-        }
         routes.get("zones", use: getAllZones)
         routes.get("zones", ":zoneid", use: getSingleZone)
         routes.post("zones", ":zoneid", ":attribute", ":value", use: changeZoneAttributes)
     }
 
-    // MARK: - GET
+    // MARK: - Core (hardware via the injected transport; no HTTP or DB — unit testable)
+
+    /// Queries every zone, merges the replies into the store, and returns them.
+    @discardableResult
+    func refreshAllZones() async throws -> [Zone] {
+        let data = try await transport.send(
+            // TODO: Support multiple chained amps (the matcher is hardcoded to 6 zones / 1 amp).
+            SerialProtocol.queryAllZonesCommand(),
+            matching: .regex(pattern: "(#>.+\r\r\n{0,}){6}#", maxLength: 200)
+        )
+        let parsed = SerialProtocol.parseAllZoneStatus(from: String(decoding: data, as: UTF8.self))
+        return await store.merge(parsed)
+    }
+
+    /// Queries one zone, merges the reply, and returns the stored zone.
+    @discardableResult
+    func refreshZone(id: Int) async throws -> Zone {
+        let data = try await transport.send(
+            SerialProtocol.querySingleZoneCommand(zoneID: id),
+            matching: .prefixSuffix(prefix: "#>", suffix: "\n", maxLength: 30)
+        )
+        let text = String(decoding: data, as: UTF8.self)
+        guard let cleanStatus = text.components(separatedBy: ">").last,
+            let parsed = SerialProtocol.parseZoneStatus(from: cleanStatus),
+            let zone = await store.merge(parsed) else {
+                throw Abort(.notFound)
+        }
+        return zone
+    }
+
+    /// Sets one attribute on one zone, applies the amp's echo, and returns the zone.
+    @discardableResult
+    func setAttribute(zoneID: String, attribute: String, value: String) async throws -> Zone {
+        let data = try await transport.send(
+            SerialProtocol.attributeCommand(zoneID: zoneID, attribute: attribute, value: value),
+            matching: .regex(pattern: "<.{6}", maxLength: 8)
+        )
+        guard let update = SerialProtocol.parseAttributeStatus(String(decoding: data, as: UTF8.self)),
+            let zone = await store.apply(update) else {
+                throw Abort(.badGateway, reason: "Amplifier did not echo a usable result")
+        }
+        return zone
+    }
+
+    // MARK: - Routes
 
     func getAllZones(_ req: Request) async throws -> [Zone] {
-        // TODO: Support multiple chained amps (the descriptor is hardcoded to 6 zones / 1 amp).
-        let regex = try NSRegularExpression(pattern: "(#>.+\r\r\n{0,}){6}#", options: .useUnixLineSeparators)
-        let descriptor = ORSSerialPacketDescriptor(regularExpression: regex, maximumPacketLength: 200, userInfo: nil)
-
-        let _: [Zone] = try await send(
-            SerialProtocol.queryAllZonesCommand(),
-            requestType: .getAllZones,
-            descriptor: descriptor
-        )
+        try await refreshAllZones()
         await loadZoneNames(on: req.db)
         return await store.allZones()
     }
 
     func getSingleZone(req: Request) async throws -> Zone {
-        guard let zoneIDString = req.parameters.get("zoneid"),
-            let zoneID = Int(zoneIDString) else {
-                throw Abort(.preconditionFailed)
+        guard let zoneID = req.parameters.get("zoneid", as: Int.self) else {
+            throw Abort(.preconditionFailed)
         }
-
-        let descriptor = ORSSerialPacketDescriptor(
-            prefixString: "#>",
-            suffixString: "\n",
-            maximumPacketLength: 30,
-            userInfo: nil
-        )
-
-        let _: Zone = try await send(
-            SerialProtocol.querySingleZoneCommand(zoneID: zoneID),
-            requestType: .getSingleZone,
-            descriptor: descriptor
-        )
+        try await refreshZone(id: zoneID)
         await loadZoneNames(on: req.db)
-
         guard let zone = await store.zone(for: zoneID) else { throw Abort(.notFound) }
         return zone
     }
-
-    // MARK: - POST
 
     func changeZoneAttributes(req: Request) async throws -> Zone {
         guard let zoneID = req.parameters.get("zoneid"),
@@ -105,90 +104,10 @@ final class SerialController: NSObject, RouteCollection {
             return try await getSingleZone(req: req)
         }
 
-        let regex = try NSRegularExpression(pattern: "<.{6}")
-        let descriptor = ORSSerialPacketDescriptor(regularExpression: regex, maximumPacketLength: 8, userInfo: nil)
-
-        return try await send(
-            SerialProtocol.attributeCommand(zoneID: zoneID, attribute: attributeString, value: value),
-            requestType: .attributeChange,
-            descriptor: descriptor
-        )
+        return try await setAttribute(zoneID: zoneID, attribute: attribute.rawValue, value: value)
     }
 
-    // MARK: - Serial Bridge
-
-    /// Sends a serial request and suspends until the matching response (or a timeout)
-    /// arrives, bridging ORSSerialPort's delegate callbacks into async/await.
-    private func send<T>(
-        _ data: Data,
-        requestType: SerialRequestType,
-        descriptor: ORSSerialPacketDescriptor
-    ) async throws -> T {
-        guard let port = port else { throw FailureError.noDevice }
-
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
-            let userInfo: [String: Any] = [
-                "requestType": requestType,
-                "resumer": Resumer(continuation)
-            ]
-            let request = ORSSerialRequest(
-                dataToSend: data,
-                userInfo: userInfo,
-                timeoutInterval: 5,
-                responseDescriptor: descriptor
-            )
-            port.send(request)
-        }
-    }
-
-    private func responseForGettingSingleZone(_ data: Data, request: ORSSerialRequest) {
-        guard let resumer = request.resumer,
-            let dataAsString = String(data: data, encoding: .ascii) else { return }
-
-        guard let cleanStatus = dataAsString.components(separatedBy: ">").last,
-            let parsed = SerialProtocol.parseZoneStatus(from: cleanStatus) else {
-                resumer.fail(FailureError.noZone)
-                return
-        }
-
-        Task {
-            if let zone = await store.merge(parsed) {
-                resumer.succeed(zone)
-            } else {
-                resumer.fail(FailureError.noZone)
-            }
-        }
-    }
-
-    private func responseForGettingAllZones(_ data: Data, request: ORSSerialRequest) {
-        guard let resumer = request.resumer,
-            let dataAsString = String(data: data, encoding: .ascii) else { return }
-
-        let parsed = SerialProtocol.parseAllZoneStatus(from: dataAsString)
-        Task {
-            resumer.succeed(await store.merge(parsed))
-        }
-    }
-
-    private func responseForAttributeChange(_ data: Data, request: ORSSerialRequest) {
-        guard let resumer = request.resumer,
-            let dataAsString = String(data: data, encoding: .ascii) else { return }
-
-        guard let update = SerialProtocol.parseAttributeStatus(dataAsString) else {
-            resumer.fail(FailureError.noResults)
-            return
-        }
-
-        Task {
-            if let zone = await store.apply(update) {
-                resumer.succeed(zone)
-            } else {
-                resumer.fail(FailureError.noResults)
-            }
-        }
-    }
-
-    // MARK: - Zone Names
+    // MARK: - Zone Names (persistence)
 
     private func loadZoneNames(on database: Database) async {
         do {
@@ -197,7 +116,7 @@ final class SerialController: NSObject, RouteCollection {
                 await store.setName(zoneName.name, for: zoneName.zoneID)
             }
         } catch {
-            application.logger.error("Zone names could not be fetched: \(error)")
+            database.logger.error("Zone names could not be fetched: \(error)")
         }
     }
 
@@ -212,76 +131,5 @@ final class SerialController: NSObject, RouteCollection {
         try await zoneName.save(on: database)
 
         await store.setName(name, for: zoneID)
-    }
-}
-
-// MARK: - ORSSerialPortDelegate
-
-extension SerialController: ORSSerialPortDelegate {
-
-    func serialPortWasClosed(_ serialPort: ORSSerialPort) {
-        application.logger.info("Serial port closed")
-    }
-
-    func serialPortWasOpened(_ serialPort: ORSSerialPort) {
-        application.logger.info("Serial port opened")
-    }
-
-    func serialPortWasRemovedFromSystem(_ serialPort: ORSSerialPort) {
-        application.logger.warning("Serial port removed from system")
-        if port === serialPort { port = nil }
-    }
-
-    func serialPort(_ serialPort: ORSSerialPort, didEncounterError error: Error) {
-        application.logger.error("Serial port error: \(error)")
-    }
-
-    func serialPort(_ serialPort: ORSSerialPort, requestDidTimeout request: ORSSerialRequest) {
-        request.resumer?.fail(FailureError.timeout)
-    }
-
-    func serialPort(_ serialPort: ORSSerialPort, didReceiveResponse responseData: Data, to request: ORSSerialRequest) {
-        guard let requestType = request.requestType else { return }
-        switch requestType {
-        case .getSingleZone:
-            responseForGettingSingleZone(responseData, request: request)
-        case .getAllZones:
-            responseForGettingAllZones(responseData, request: request)
-        case .attributeChange:
-            responseForAttributeChange(responseData, request: request)
-        }
-    }
-}
-
-// MARK: - ORSSerialRequest userInfo accessors
-
-private extension ORSSerialRequest {
-    var userInfoDictionary: [String: Any]? { userInfo as? [String: Any] }
-    var resumer: Resumer? { userInfoDictionary?["resumer"] as? Resumer }
-    var requestType: SerialRequestType? { userInfoDictionary?["requestType"] as? SerialRequestType }
-}
-
-/// Type-erased, one-shot bridge from a serial delegate callback back to an awaiting
-/// continuation. Guards against double-resume if a response and a timeout race.
-final class Resumer {
-    private var resume: ((Result<Any, Error>) -> Void)?
-
-    init<T>(_ continuation: CheckedContinuation<T, Error>) {
-        resume = { result in
-            switch result {
-            case .success(let value): continuation.resume(returning: value as! T)
-            case .failure(let error): continuation.resume(throwing: error)
-            }
-        }
-    }
-
-    func succeed(_ value: Any) {
-        resume?(.success(value))
-        resume = nil
-    }
-
-    func fail(_ error: Error) {
-        resume?(.failure(error))
-        resume = nil
     }
 }

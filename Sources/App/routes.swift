@@ -1,7 +1,7 @@
 import Vapor
 
 func routes(_ app: Application) throws {
-    let serialController = SerialController(app: app)
-    try app.register(collection: serialController)
-
+    let transport = ORSSerialTransport(logger: app.logger)
+    let controller = SerialController(transport: transport)
+    try app.register(collection: controller)
 }

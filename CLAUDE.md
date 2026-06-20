@@ -39,31 +39,29 @@ Dependency versions are **pinned with `.exact(...)`** in `Package.swift`. Bumpin
 
 ### Hardware requirement
 
-`SerialController.init` looks for the first port whose name contains `usbserial`. `port` is **optional** — if no adapter is present the app still boots; serial routes then fail with `.serviceUnavailable` rather than crashing.
+`ORSSerialTransport.init` looks for the first port whose name contains `usbserial`. The port is **optional** — if no adapter is present the app still boots; serial routes then fail (`noDevice`) rather than crashing.
 
 ## Architecture
 
 A thin HTTP layer over a serial protocol. Four things matter:
 
-### 1. `SerialController` is the whole application
-`Sources/App/Controllers/SerialController.swift` is a `RouteCollection` **and** the `ORSSerialPortDelegate`. It owns the serial port and every route; the live zone state lives in a separate `ZoneStore` actor (it can't be an actor itself — `ORSSerialPortDelegate` requires `NSObject`).
+### 1. `SerialController` holds the routes
+`Sources/App/Controllers/SerialController.swift` is a plain `RouteCollection` with no hardware dependency or mutable state of its own: it talks to the amp through an injected `SerialTransport` and keeps live zone state in a `ZoneStore` actor.
 
-Routes (registered in `boot(routes:)`, all `async` except settings):
+Routes (registered in `boot(routes:)`, all `async`):
 - `GET /zones` — query all zones (sends `?10\r`)
 - `GET /zones/:zoneid` — query one zone (sends `?<id>\r`)
 - `POST /zones/:zoneid/:attribute/:value` — set an attribute, or set a name if `:attribute == name`
 
-### 2. The async serial bridge
-ORSSerialPort is delegate/callback-based; the routes are `async`. The bridge:
+### 2. The serial transport
+`SerialTransport` (`Sources/App/SerialTransport.swift`) abstracts the link: `send(_ command: Data, matching: SerialResponseMatcher) async throws -> Data`. `ORSSerialTransport` is the production implementation — it owns the `ORSSerialPort`, turns the matcher into an `ORSSerialPacketDescriptor`, and bridges the delegate callback back to the caller with `withCheckedThrowingContinuation` (a `ContinuationBox` guards against a reply/timeout double-resume). Tests inject a `FakeSerialTransport` that returns canned bytes.
 
-1. A route handler builds a command (via `SerialProtocol`) and an `ORSSerialPacketDescriptor` (regex or prefix/suffix matcher telling ORSSerialPort how to recognize the reply).
-2. `send<T>(_:requestType:descriptor:)` wraps `withCheckedThrowingContinuation`, storing a **`Resumer`** (type-erased, one-shot continuation wrapper) plus a `SerialRequestType` in the request's `userInfo`, then `port.send(request)`.
-3. When the reply arrives, `serialPort(_:didReceiveResponse:to:)` dispatches on `userInfo["requestType"]` to a `responseFor…` method, which parses the bytes, updates `zones`, and calls `resumer.succeed(...)`. A timeout calls `resumer.fail(.timeout)`. `Resumer` guards against double-resume.
+The controller's core methods — `refreshAllZones`, `refreshZone`, `setAttribute` — build a command via `SerialProtocol`, `await transport.send`, parse the reply, and update the store. They take no `Request` and touch no DB, so they're unit-testable with the fake (see `SerialControllerTests`). The route handlers are thin wrappers that add parameter decoding and name persistence on top.
 
-Adding a serial operation means touching: a `SerialRequestType` case, a route + `send` call, and a `responseFor…` parser in the delegate switch.
+Adding a serial operation means: a `SerialProtocol` command builder + matcher, a controller core method that parses the reply, and a thin route wrapper.
 
 ### 3. `SerialProtocol` — the pure, testable core
-`Sources/App/SerialProtocol.swift` is a hardware-free `enum` holding all command building and reply parsing (`parseZoneStatus`, `parseAllZoneStatus`, `parseAttributeStatus`, `queryAllZonesCommand`, etc.). It has **no ORSSerialPort dependency**, which is what makes the wire format unit-testable (`SerialController` can't be instantiated without hardware). Put protocol logic here, not on the controller.
+`Sources/App/SerialProtocol.swift` is a hardware-free `enum` holding all command building and reply parsing (`parseZoneStatus`, `parseAllZoneStatus`, `parseAttributeStatus`, `queryAllZonesCommand`, etc.). It has **no ORSSerialPort dependency**, which keeps the wire format unit-testable. Put protocol logic here, not on the controller.
 
 The Monoprice wire format:
 - **Zone IDs are amp-prefixed**: `11`–`16` (amp unit 1, zones 1–6). `?10` returns all six zones. The `getAllZones` regex `(#>.+\r\r\n{0,}){6}#` is hardcoded to 6 zones / 1 amp — see the TODO about multiple chained amps.
@@ -71,7 +69,7 @@ The Monoprice wire format:
 - **Attribute-set commands** are `<<zone><attr><value>\r`, e.g. `<11vo15\r`. Attribute codes are the raw values of `ZoneAttributeIdentifier` (`pa`, `pr`, `mu`, `dt`, `vo`, `tr`, `bs`, `bl`, `ch`). Reply matched with regex `<.{6}`.
 
 ### 4. State & persistence
-- **Live zone state is in-memory** in the `ZoneStore` actor (`Sources/App/ZoneStore.swift`), rebuilt from amp replies; not persisted. Every mutation/read goes through the actor, so the delegate thread and the route handlers can't race. Delegate callbacks (which are synchronous) reach it via `Task { await store… }`, then resume the request's continuation.
+- **Live zone state is in-memory** in the `ZoneStore` actor (`Sources/App/ZoneStore.swift`), rebuilt from amp replies; not persisted. Every mutation/read goes through the actor, so the serial transport and the route handlers can't race on it. The controller's core methods `await transport.send`, parse the reply, then `await store.merge`/`apply`.
 - **Only zone names persist**, in SQLite (`zones.sqlite`, gitignored) via Fluent. `ZoneName` is the sole model; `CreateZone` its migration. `loadZoneNames(on:)` is `await`ed during GETs so names are merged deterministically (no fire-and-forget race).
 - DB configured in `configure.swift`; `autoMigrate().wait()` runs at boot.
 
@@ -79,17 +77,11 @@ The Monoprice wire format:
 - `Zone` — core value type. `Codable` uses **amp protocol keys** as JSON keys (`zone`, `pr`, `mu`, `vo`, …) and zero-pads single digits. `-1` means "unknown / not yet read." `apply(_:)` writes a single attribute update's *value* to the right field.
 - `ZoneAttributeIdentifier` — friendly names to 2-char protocol codes; drives command building and response routing.
 - `ZoneName` (Fluent) / `CreateZone` (migration) — name persistence.
-- `SerialRequestType`, `ZoneAttributeUpdate`, `PortSetting` — support types.
+- `ZoneAttributeUpdate` — a parsed attribute change (zone, attribute, value).
 
 ## Open issues (not yet fixed)
 - **Single-amp assumptions** are hardcoded (the `{6}` in the all-zones regex, zone IDs `11`–`16`). Centralize before adding multi-amp support.
-- **`port` itself isn't actor-isolated** — it's read in `send` on a route thread and set to `nil` in `serialPortWasRemovedFromSystem` on the delegate thread. Benign (set-once, nil-rarely) but not strictly clean; the zone *state* race is fixed via `ZoneStore`.
-
-## Stale infrastructure (does not match how this runs)
-- `web.Dockerfile` / `docker-compose.yml` target Linux + Postgres. The app is macOS-only (ORSSerialPort) on SQLite — these won't produce a working build.
-- `.github/workflows/test.yml` runs `swift test` on Linux images — can't compile ORSSerialPort; non-functional.
-
-Treat Docker/CI as vestigial. The real build/ship path is `scripts/deploy-to-mini.sh`.
+- **The port in `ORSSerialTransport` isn't synchronized** — read in `send` and set to `nil` in `serialPortWasRemovedFromSystem` (the delegate thread). Benign (set-once, nil-rarely); the zone *state* race is fixed via `ZoneStore`.
 
 ## Code Conventions
 - Swift / Vapor 4, `swift-tools-version:5.5`, two targets: `App` (library) and `Run` (executable, `Sources/Run/main.swift`).
