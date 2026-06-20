@@ -21,6 +21,9 @@ swift test           # run the unit tests
 
 ## HTTP API
 
+**Building a client? See [API.md](API.md)** for the complete reference — every endpoint, the
+JSON shapes of `Zone`/`Preset`/`Source`, value ranges, and status codes.
+
 Zones are addressed `11`–`16` (amplifier unit 1, zones 1–6).
 
 | Method | Path | Description |
