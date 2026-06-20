@@ -63,6 +63,23 @@ struct Zone: Equatable {
         balance = zone.balance
         source = zone.source
     }
+
+    /// Applies a single attribute change reported by the amplifier, writing the
+    /// update's value to the matching field.
+    mutating func apply(_ update: ZoneAttributeUpdate) {
+        switch update.attribute {
+        case .pa: pa = update.value
+        case .power: power = update.value
+        case .mute: mute = update.value
+        case .doNotDisturb: doNotDisturb = update.value
+        case .volume: volume = update.value
+        case .treble: treble = update.value
+        case .bass: bass = update.value
+        case .balance: balance = update.value
+        case .source: source = update.value
+        case .name: break
+        }
+    }
 }
 
 
