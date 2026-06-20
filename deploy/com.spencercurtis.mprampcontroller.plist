@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.spencercurtis.mprampcontroller</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/spencercurtis/mprampcontroller/Run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/spencercurtis/mprampcontroller</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/spencercurtis/mprampcontroller/run.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/spencercurtis/mprampcontroller/run.log</string>
+</dict>
+</plist>

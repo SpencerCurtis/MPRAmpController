@@ -21,19 +21,22 @@ The code uses `async`/`await` (tools-version **5.5**). async/await *back-deploys
 
 ```bash
 swift build                 # native build (won't run on the mini)
-swift test                  # 11 XCTest cases — run these for fast feedback
-scripts/deploy-to-mini.sh   # cross-compile x86_64 + ship to the Catalina mini
+swift test                  # XCTest suite — run these for fast feedback
+REMOTE_DIR=/Users/spencercurtis/mprampcontroller scripts/deploy-to-mini.sh   # cross-compile x86_64 + ship
 ```
 
-The server listens on `0.0.0.0:8001` (hardcoded in `configure.swift`). On the mini:
+The server listens on `0.0.0.0:8001` (hardcoded in `configure.swift`).
+
+**Deployment (LaunchAgent).** On the mini it runs as a user LaunchAgent — `~/Library/LaunchAgents/com.spencercurtis.mprampcontroller.plist` (tracked at `deploy/`), `RunAtLoad` + `KeepAlive`, working dir `/Users/spencercurtis/mprampcontroller`. It auto-starts at login and restarts on crash. A LaunchAgent (login-timed), not a LaunchDaemon (boot-timed), because `ORSSerialTransport` grabs the USB-serial port once at startup and an early boot start can beat USB enumeration. `deploy-to-mini.sh` is agent-aware: it `bootout`s the agent before `scp` (you can't overwrite a running Mach-O — `ETXTBSY`) and `bootstrap`s it after.
 
 ```bash
-ssh spencercurtis@Spencers-Mac-mini.local 'cd /tmp/mprampcontroller && ./Run'
-# Stop it with:  pkill -9 -x Run     <-- exact name; the process argv is "./Run",
-#                                        so pkill -f <fullpath> will NOT match it.
+# manage on the mini:
+launchctl bootout   gui/$(id -u)/com.spencercurtis.mprampcontroller   # stop
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.spencercurtis.mprampcontroller.plist  # start
+launchctl kickstart -k gui/$(id -u)/com.spencercurtis.mprampcontroller # restart
 ```
 
-**Gotcha:** `main.swift` ends with `RunLoop.main.run()`, which never returns — even after SIGTERM or a failed port bind. So `kill $PID; wait $PID` over SSH hangs, and stray instances linger holding port 8001 + the serial port. Always clean up with `pkill -9 -x Run`.
+**Gotcha:** `main.swift` ends with `RunLoop.main.run()`, which never returns — even after SIGTERM or a failed port bind. So `kill $PID; wait $PID` over SSH hangs. Use `pkill -9 -x Run` for a one-off process; for the managed service use `launchctl bootout` (a bare `pkill` just triggers a `KeepAlive` restart). `pkill -f <fullpath>` does NOT match — the process argv is `./Run`.
 
 Dependency versions are **pinned with `.exact(...)`** in `Package.swift`. Bumping the `swift-tools-version` (5.5) is independent of those pins, but don't bump Vapor/Fluent/ORSSerialPort casually — version drift was a real source of breakage.
 
