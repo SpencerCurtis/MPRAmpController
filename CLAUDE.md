@@ -46,7 +46,7 @@ Dependency versions are **pinned with `.exact(...)`** in `Package.swift`. Bumpin
 A thin HTTP layer over a serial protocol. Four things matter:
 
 ### 1. `SerialController` is the whole application
-`Sources/App/Controllers/SerialController.swift` is a `RouteCollection` **and** the `ORSSerialPortDelegate`. It owns the serial port, the in-memory zone state, and every route.
+`Sources/App/Controllers/SerialController.swift` is a `RouteCollection` **and** the `ORSSerialPortDelegate`. It owns the serial port and every route; the live zone state lives in a separate `ZoneStore` actor (it can't be an actor itself — `ORSSerialPortDelegate` requires `NSObject`).
 
 Routes (registered in `boot(routes:)`, all `async` except settings):
 - `GET /zones` — query all zones (sends `?10\r`)
@@ -72,7 +72,7 @@ The Monoprice wire format:
 - **Attribute-set commands** are `<<zone><attr><value>\r`, e.g. `<11vo15\r`. Attribute codes are the raw values of `ZoneAttributeIdentifier` (`pa`, `pr`, `mu`, `dt`, `vo`, `tr`, `bs`, `bl`, `ch`). Reply matched with regex `<.{6}`.
 
 ### 4. State & persistence
-- **Live zone state is in-memory** (`zones: [Zone]`), rebuilt from amp replies; not persisted.
+- **Live zone state is in-memory** in the `ZoneStore` actor (`Sources/App/ZoneStore.swift`), rebuilt from amp replies; not persisted. Every mutation/read goes through the actor, so the delegate thread and the route handlers can't race. Delegate callbacks (which are synchronous) reach it via `Task { await store… }`, then resume the request's continuation.
 - **Only zone names persist**, in SQLite (`zones.sqlite`, gitignored) via Fluent. `ZoneName` is the sole model; `CreateZone` its migration. `loadZoneNames(on:)` is `await`ed during GETs so names are merged deterministically (no fire-and-forget race).
 - DB configured in `configure.swift`; `autoMigrate().wait()` runs at boot.
 
@@ -83,9 +83,9 @@ The Monoprice wire format:
 - `SerialRequestType`, `ZoneAttributeUpdate`, `PortSetting` — support types.
 
 ## Open issues (not yet fixed)
-- **Data race on `zones`.** It's mutated on ORSSerialPort's delegate thread and read after the continuation resumes (on an event-loop thread) with no synchronization. Low-frequency in practice but real; the proper fix is an actor or a dedicated serial queue guarding all `zones`/port access.
 - **Single-amp assumptions** are hardcoded (the `{6}` in the all-zones regex, zone IDs `11`–`16`). Centralize before adding multi-amp support.
-- **`Zone.init(from:)` ignores a decoded `name`** (always sets `id.description`) while `encode` writes it — asymmetric round-trip.
+- **`port` itself isn't actor-isolated** — it's read in `send` on a route thread and set to `nil` in `serialPortWasRemovedFromSystem` on the delegate thread. Benign (set-once, nil-rarely) but not strictly clean; the zone *state* race is fixed via `ZoneStore`.
+- **`POST /settings` validates but applies nothing** — baud-rate fields are commented out in `PortSettings`, so the endpoint only stores `path`. Decide whether to implement or remove it.
 
 ## Stale infrastructure (does not match how this runs)
 - `web.Dockerfile` / `docker-compose.yml` target Linux + Postgres. The app is macOS-only (ORSSerialPort) on SQLite — these won't produce a working build.

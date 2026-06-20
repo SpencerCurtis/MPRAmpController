@@ -112,7 +112,7 @@ extension Zone: Content {
         self.bass = Int(try container.decode(String.self, forKey: .bass)) ?? 0
         self.balance = Int(try container.decode(String.self, forKey: .balance)) ?? 0
         self.source = Int(try container.decode(String.self, forKey: .source)) ?? 0
-        self.name = self.id.description
+        self.name = (try? container.decode(String.self, forKey: .name)) ?? self.id.description
     }
     
     func encode(to encoder: Encoder) throws {
@@ -132,6 +132,7 @@ extension Zone: Content {
     }
     
     private func formattedString(for value: Int) -> String {
+        guard value >= 0 else { return value.description }
         return value < 10 ? "0\(value)" : value.description
     }
 }

@@ -40,4 +40,20 @@ final class ZoneTests: XCTestCase {
         XCTAssertEqual(json["zone"], "05")
         XCTAssertEqual(json["vo"], "07")
     }
+
+    func testEncodingNegativeValueIsNotZeroPadded() throws {
+        let zone = Zone(id: 11)   // unread fields default to -1
+        let data = try JSONEncoder().encode(zone)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: String])
+        XCTAssertEqual(json["pa"], "-1")   // previously encoded as "0-1"
+    }
+
+    func testDecodePreservesName() throws {
+        let json = Data("""
+        {"zone":"11","pa":"00","pr":"01","mu":"00","dt":"00","vo":"12","tr":"07","bs":"07","bl":"10","ch":"03","name":"Office"}
+        """.utf8)
+        let zone = try JSONDecoder().decode(Zone.self, from: json)
+        XCTAssertEqual(zone.name, "Office")   // previously always overwritten with id.description
+        XCTAssertEqual(zone.volume, 12)
+    }
 }

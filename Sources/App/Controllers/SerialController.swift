@@ -15,12 +15,9 @@ final class SerialController: NSObject, RouteCollection {
     var port: ORSSerialPort?
     var currentSettings: PortSettings
 
-    var zones: [Zone] = [Zone(id: 11),
-                         Zone(id: 12),
-                         Zone(id: 13),
-                         Zone(id: 14),
-                         Zone(id: 15),
-                         Zone(id: 16)]
+    /// All live zone state lives behind this actor (see ZoneStore) so the serial
+    /// delegate thread and the async route handlers can't race on it.
+    let store = ZoneStore(zoneIDs: [11, 12, 13, 14, 15, 16])
 
     private let validBaudRates: [Int] = [9600, 19200, 38400, 57600, 115200, 230400]
 
@@ -71,7 +68,7 @@ final class SerialController: NSObject, RouteCollection {
             descriptor: descriptor
         )
         await loadZoneNames(on: req.db)
-        return zones
+        return await store.allZones()
     }
 
     func getSingleZone(req: Request) async throws -> Zone {
@@ -94,8 +91,8 @@ final class SerialController: NSObject, RouteCollection {
         )
         await loadZoneNames(on: req.db)
 
-        guard let index = indexOfZone(for: zoneID) else { throw Abort(.notFound) }
-        return zones[index]
+        guard let zone = await store.zone(for: zoneID) else { throw Abort(.notFound) }
+        return zone
     }
 
     // MARK: - POST
@@ -174,39 +171,46 @@ final class SerialController: NSObject, RouteCollection {
             let dataAsString = String(data: data, encoding: .ascii) else { return }
 
         guard let cleanStatus = dataAsString.components(separatedBy: ">").last,
-            let parsed = SerialProtocol.parseZoneStatus(from: cleanStatus),
-            let index = indexOfZone(for: parsed.id) else {
+            let parsed = SerialProtocol.parseZoneStatus(from: cleanStatus) else {
                 resumer.fail(FailureError.noZone)
                 return
         }
 
-        zones[index].updateWith(parsed)
-        resumer.succeed(zones[index])
+        Task {
+            if let zone = await store.merge(parsed) {
+                resumer.succeed(zone)
+            } else {
+                resumer.fail(FailureError.noZone)
+            }
+        }
     }
 
     private func responseForGettingAllZones(_ data: Data, request: ORSSerialRequest) {
         guard let resumer = request.resumer,
             let dataAsString = String(data: data, encoding: .ascii) else { return }
 
-        for parsed in SerialProtocol.parseAllZoneStatus(from: dataAsString) {
-            guard let index = indexOfZone(for: parsed.id) else { continue }
-            zones[index].updateWith(parsed)
+        let parsed = SerialProtocol.parseAllZoneStatus(from: dataAsString)
+        Task {
+            resumer.succeed(await store.merge(parsed))
         }
-        resumer.succeed(zones)
     }
 
     private func responseForAttributeChange(_ data: Data, request: ORSSerialRequest) {
         guard let resumer = request.resumer,
             let dataAsString = String(data: data, encoding: .ascii) else { return }
 
-        guard let update = SerialProtocol.parseAttributeStatus(dataAsString),
-            let index = indexOfZone(for: update.zoneID) else {
-                resumer.fail(FailureError.noResults)
-                return
+        guard let update = SerialProtocol.parseAttributeStatus(dataAsString) else {
+            resumer.fail(FailureError.noResults)
+            return
         }
 
-        zones[index].apply(update)
-        resumer.succeed(zones[index])
+        Task {
+            if let zone = await store.apply(update) {
+                resumer.succeed(zone)
+            } else {
+                resumer.fail(FailureError.noResults)
+            }
+        }
     }
 
     // MARK: - Zone Names
@@ -215,8 +219,7 @@ final class SerialController: NSObject, RouteCollection {
         do {
             let fetched = try await ZoneName.query(on: database).all()
             for zoneName in fetched {
-                guard let index = indexOfZone(for: zoneName.zoneID) else { continue }
-                zones[index].name = zoneName.name
+                await store.setName(zoneName.name, for: zoneName.zoneID)
             }
         } catch {
             application.logger.error("Zone names could not be fetched: \(error)")
@@ -233,15 +236,7 @@ final class SerialController: NSObject, RouteCollection {
         zoneName.name = name
         try await zoneName.save(on: database)
 
-        if let index = indexOfZone(for: zoneID) {
-            zones[index].name = name
-        }
-    }
-
-    // MARK: - Helpers
-
-    func indexOfZone(for id: Int) -> Int? {
-        zones.firstIndex(where: { $0.id == id })
+        await store.setName(name, for: zoneID)
     }
 }
 
