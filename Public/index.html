@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MPR Amp Controller</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #15171c; color: #e8eaed; }
+  header { padding: 1rem 1.25rem; border-bottom: 1px solid #2a2e37; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+  button { font: inherit; color: inherit; background: #2a2e37; border: 1px solid #3a3f4b; border-radius: 8px; padding: .4rem .7rem; cursor: pointer; }
+  button:hover { background: #343945; }
+  button.on { background: #2e7d32; border-color: #2e7d32; }
+  main { padding: 1.25rem; max-width: 920px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+  .card { background: #1c1f26; border: 1px solid #2a2e37; border-radius: 12px; padding: 1rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 .75rem; }
+  .row { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; }
+  .row > label { width: 4.5rem; color: #9aa0ac; font-size: .85rem; }
+  select, input[type=range] { flex: 1; min-width: 0; }
+  select, input[type=text] { background: #2a2e37; color: inherit; border: 1px solid #3a3f4b; border-radius: 8px; padding: .35rem .5rem; }
+  .vol-val { width: 2.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+  section.panel { margin-top: 1.5rem; background: #1c1f26; border: 1px solid #2a2e37; border-radius: 12px; padding: 1rem; }
+  section.panel h2 { font-size: 1rem; margin: 0 0 .5rem; }
+  .preset-row { display: flex; align-items: center; gap: .5rem; padding: .4rem 0; border-bottom: 1px solid #2a2e37; }
+  .preset-row > span { flex: 1; }
+  .muted { color: #9aa0ac; font-size: .85rem; }
+  #error { color: #e57373; padding: .5rem 1.25rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MPR Amp Controller</h1>
+  <button onclick="refresh()">Refresh</button>
+</header>
+<div id="error"></div>
+<main>
+  <div id="zones" class="grid"></div>
+
+  <section class="panel">
+    <h2>Presets</h2>
+    <div id="presets"></div>
+    <div class="row" style="margin-top:.75rem">
+      <input id="presetName" type="text" placeholder="New preset name">
+      <button onclick="savePreset()">Save current</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Source names</h2>
+    <div id="sources"></div>
+  </section>
+</main>
+
+<script>
+const api = (path, opts) => fetch(path, opts).then(r => r.ok ? r.json().catch(() => ({})) : Promise.reject(r.status));
+const num = v => parseInt(v, 10);
+let sources = [];
+
+async function refresh() {
+  try {
+    sources = await api('/sources');
+    renderZones(await api('/zones'));
+    renderPresets(await api('/presets'));
+    renderSources();
+    document.getElementById('error').textContent = '';
+  } catch (e) {
+    document.getElementById('error').textContent = 'Failed to load (' + e + ')';
+  }
+}
+
+function renderZones(zones) {
+  const el = document.getElementById('zones');
+  el.innerHTML = '';
+  zones.forEach(z => {
+    const id = z.zone, power = num(z.pr) === 1, vol = num(z.vo), src = num(z.ch);
+    const title = (z.name && z.name !== id) ? z.name : 'Zone ' + (num(id) - 10);
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML =
+      '<h2>' + title + '</h2>' +
+      '<div class="row"><label>Power</label>' +
+        '<button class="' + (power ? 'on' : '') + '" onclick="setAttr(\'' + id + '\',\'pr\',' + (power ? 0 : 1) + ')">' + (power ? 'On' : 'Off') + '</button></div>' +
+      '<div class="row"><label>Source</label>' +
+        '<select onchange="setAttr(\'' + id + '\',\'ch\',this.value)">' +
+          sources.map(s => '<option value="' + s.id + '"' + (s.id === src ? ' selected' : '') + '>' + s.name + '</option>').join('') +
+        '</select></div>' +
+      '<div class="row"><label>Volume</label>' +
+        '<input type="range" min="0" max="38" value="' + (vol < 0 ? 0 : vol) + '" ' +
+          'oninput="this.nextElementSibling.textContent=this.value" ' +
+          'onchange="setAttr(\'' + id + '\',\'vo\',this.value)">' +
+        '<span class="vol-val">' + (vol < 0 ? '--' : vol) + '</span></div>';
+    el.appendChild(card);
+  });
+}
+
+function renderPresets(presets) {
+  const el = document.getElementById('presets');
+  if (!presets.length) { el.innerHTML = '<p class="muted">No presets saved.</p>'; return; }
+  el.innerHTML = '';
+  presets.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'preset-row';
+    row.innerHTML = '<span>' + p.name + '</span>' +
+      '<button onclick="applyPreset(\'' + p.id + '\')">Apply</button>' +
+      '<button onclick="deletePreset(\'' + p.id + '\')">Delete</button>';
+    el.appendChild(row);
+  });
+}
+
+function renderSources() {
+  const el = document.getElementById('sources');
+  el.innerHTML = '';
+  sources.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<label>' + s.id + '</label>' +
+      '<input type="text" value="' + s.name.replace(/"/g, '&quot;') + '" ' +
+        'onchange="renameSource(' + s.id + ', this.value)">';
+    el.appendChild(row);
+  });
+}
+
+async function setAttr(id, attr, value) {
+  try { await api('/zones/' + id + '/' + attr + '/' + value, { method: 'POST' }); }
+  catch (e) { document.getElementById('error').textContent = 'Command failed (' + e + ')'; }
+}
+async function applyPreset(id) { await api('/presets/' + id + '/apply', { method: 'POST' }); refresh(); }
+async function deletePreset(id) { await fetch('/presets/' + id, { method: 'DELETE' }); refresh(); }
+async function savePreset() {
+  const name = document.getElementById('presetName').value.trim();
+  if (!name) return;
+  await api('/presets?name=' + encodeURIComponent(name), { method: 'POST' });
+  document.getElementById('presetName').value = '';
+  refresh();
+}
+async function renameSource(id, name) {
+  await api('/sources/' + id + '/' + encodeURIComponent(name.trim()), { method: 'POST' });
+  refresh();
+}
+
+refresh();
+</script>
+</body>
+</html>

@@ -33,6 +33,32 @@ final class SerialController: RouteCollection {
         routes.post("presets", use: capturePreset)
         routes.post("presets", ":presetid", "apply", use: applyPresetRoute)
         routes.delete("presets", ":presetid", use: deletePreset)
+
+        routes.get("sources", use: listSources)
+        routes.post("sources", ":sourceid", ":name", use: setSourceName)
+    }
+
+    // MARK: - Sources
+
+    func listSources(req: Request) async throws -> [SourceDTO] {
+        let saved = try await SourceName.query(on: req.db).all()
+        let byID = Dictionary(saved.map { ($0.sourceID, $0.name) }, uniquingKeysWith: { _, last in last })
+        return SourceCatalog.merged(savedNames: byID)
+    }
+
+    func setSourceName(req: Request) async throws -> SourceDTO {
+        guard let sourceID = req.parameters.get("sourceid", as: Int.self),
+            SourceCatalog.ids.contains(sourceID),
+            let name = req.parameters.get("name") else {
+                throw Abort(.preconditionFailed)
+        }
+        let source = try await SourceName.query(on: req.db)
+            .filter(\.$sourceID == sourceID)
+            .first() ?? SourceName()
+        source.sourceID = sourceID
+        source.name = name
+        try await source.save(on: req.db)
+        return SourceDTO(id: sourceID, name: name)
     }
 
     // MARK: - Core (hardware via the injected transport; no HTTP or DB — unit testable)

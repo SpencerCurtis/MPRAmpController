@@ -35,6 +35,8 @@ install_name_tool -add_rpath @executable_path "$SHIP/Run" 2>/dev/null || true
 echo "==> Shipping to ${MINI}:${REMOTE_DIR}"
 ssh "$MINI" "mkdir -p '$REMOTE_DIR'"
 scp -q "$SHIP/Run" "$SHIP/libswift_Concurrency.dylib" "$MINI:$REMOTE_DIR/"
+# Ship the web UI (served from Public/ relative to the working directory).
+[ -d Public ] && scp -q -r Public "$MINI:$REMOTE_DIR/"
 
 echo "==> Done."
 echo "    Run it:   ssh $MINI 'cd $REMOTE_DIR && ./Run'"

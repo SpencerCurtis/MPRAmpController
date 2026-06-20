@@ -54,6 +54,8 @@ Routes (registered in `boot(routes:)`, all `async`):
 - `POST /zones/:zoneid/:attribute/:value` — set an attribute, or set a name if `:attribute == name`
 - `POST /zones/all/:attribute/:value` — set one attribute on every zone (literal `all` wins over `:zoneid`)
 - `GET /presets` · `POST /presets?name=…` (snapshot current state) · `POST /presets/:presetid/apply` · `DELETE /presets/:presetid`
+- `GET /sources` · `POST /sources/:sourceid/:name` — friendly input names (defaults `Source N`)
+- `GET /` serves a vanilla-JS control panel from `Public/index.html` (`FileMiddleware` `defaultFile`). `deploy-to-mini.sh` ships `Public/` alongside the binary; the server resolves it relative to its working directory.
 
 **Routing gotcha:** RoutingKit forbids two routes sharing a prefix but using *different* parameter names at the same position (e.g. `presets/:name` + `presets/:presetid/apply` → boot-time `Precondition failed`). Keep one param name per position; capture takes its name from the query string instead. A *constant* vs a *param* (`zones/all` vs `zones/:zoneid`) is fine. This isn't caught by the controller tests since they don't exercise routing.
 
@@ -82,6 +84,7 @@ The Monoprice wire format:
 - `ZoneAttributeIdentifier` — friendly names to 2-char protocol codes; drives command building and response routing.
 - `ZoneName` (Fluent) / `CreateZone` (migration) — name persistence.
 - `Preset` (Fluent) / `CreatePreset` (migration) — a named scene; per-zone power/source/volume stored as JSON in the `zones` column, exposed to the API via `PresetDTO`/`PresetZone`.
+- `SourceName` (Fluent) / `CreateSourceName` (migration) — friendly input names; `SourceCatalog.merged` fills `Source N` defaults.
 - `ZoneAttributeUpdate` — a parsed attribute change (zone, attribute, value).
 
 ## Open issues (not yet fixed)

@@ -5,7 +5,7 @@ import FluentSQLiteDriver
 // Called before your application initializes.
 public func configure(_ app: Application) throws {
     // Serves files from `Public/` directory
-    app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
+    app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory, defaultFile: "index.html"))
     // Configure SQLite database
 //    app.databases.use(.sqlite(.file("db.sqlite")), as: .sqlite)
 
@@ -16,6 +16,7 @@ public func configure(_ app: Application) throws {
     app.databases.use(.sqlite(.file("zones.sqlite")), as: .sqlite)
     app.migrations.add(CreateZone())
     app.migrations.add(CreatePreset())
+    app.migrations.add(CreateSourceName())
     try app.autoMigrate().wait()
     try routes(app)
 }
